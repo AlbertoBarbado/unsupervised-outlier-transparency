@@ -20,7 +20,6 @@ The dependencies included in the file requirements.txt are needed to be able to 
 
 ```
 $ pip install -r requirements.txt 
-
 ```
 
 ### Usage
@@ -44,7 +43,6 @@ The function then returns both the model trained and a dataframe with the rules 
 Rule Nº 1: IF sex = 0 AND school = 0 AND studytime <= 4 AND G3 <= 18 AND studytime >= 3 AND G3 >= 0 
 Rule Nº 2: IF sex = 1 AND school = 0 AND studytime <= 4 AND G3 <= 20 AND studytime >= 1 AND G3 >= 0 
 Rule Nº 3: IF sex = 1 AND school = 1 AND studytime <= 1 AND G3 <= 13 AND studytime >= 1 AND G3 >= 13
-
 ```
 
 These rules indicates the limit values that justify why a data point should be considered an anomaly.
@@ -67,5 +65,7 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE.md](LIC
 ## References
 
 * [1]: H. Núñez, C. Angulo, and A. Català. Rule extraction from support vector machines. In European Symposium on Artificial Neural Networks (ESANN), pages 107–112, 2002.
+
 * [2]: D. Martens, J. Huysmans, R. Setiono, J. Vanthienen, and B. Baesens. Rule Extraction from Support Vector Machines: An Overview of Issues and Application in Credit Scoring. 2008. https://pdfs.semanticscholar.org/f4d6/25688d0bd8b73cbc61454c1b701385bea214.pdf
+
 * [3]: https://scikit-learn.org/stable/modules/generated/sklearn.svm.OneClassSVM.html
