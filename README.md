@@ -34,7 +34,6 @@ NOTE: categorical columns should be onehot encoded.
 
 ```
 >>> ocsvm_rule_extractor(dataset, numerical_cols, categorical_cols, dct_params)
-
 ```
 
 The function then returns both the model trained and a dataframe with the rules infered. These rules look like the following example:
@@ -65,7 +64,5 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE.md](LIC
 ## References
 
 * [1]: H. Núñez, C. Angulo, and A. Català. Rule extraction from support vector machines. In European Symposium on Artificial Neural Networks (ESANN), pages 107–112, 2002.
-
-* [2]: D. Martens, J. Huysmans, R. Setiono, J. Vanthienen, and B. Baesens. Rule Extraction from Support Vector Machines: An Overview of Issues and Application in Credit Scoring. 2008. https://pdfs.semanticscholar.org/f4d6/25688d0bd8b73cbc61454c1b701385bea214.pdf
-
-* [3]: https://scikit-learn.org/stable/modules/generated/sklearn.svm.OneClassSVM.html
+* [2]: D. Martens, J. Huysmans, R. Setiono, J. Vanthienen, and B. Baesens. Rule Extraction from Support Vector Machines: An Overview of Issues and Application in Credit Scoring. 2008.
+* [3]: scikit-learn library for OneClassSVM: https://scikit-learn.org/stable/modules/generated/sklearn.svm.OneClassSVM.html
