@@ -64,7 +64,7 @@ def ocsvm_rule_extractor(dataset_mat, numerical_cols, categorical_cols, dct_para
     preds["distances"] = model.decision_function(X_train)
     df_anomalies = pd.merge(dataset_mat, preds, left_index=True, right_index=True)
     
-    df_anomalies_yes = df_anomalies[df_anomalies['predictions']==-1].sort_values(by="distances", ascending=True)
+    df_anomalies_yes = df_anomalies[df_anomalies['predictions']==1].sort_values(by="distances", ascending=True)
     X_train_yes = X_train[df_anomalies_yes.index]
     df_yes = df_anomalies_yes.copy().drop(columns={'predictions', 'distances'})
     
@@ -80,6 +80,7 @@ def ocsvm_rule_extractor(dataset_mat, numerical_cols, categorical_cols, dct_para
     df_bounds = pd.merge(df_bounds_max, df_bounds_min, left_on=categorical_cols, right_on=categorical_cols, suffixes=('_max', '_min'))
     
     # Extract rules
+    print("NOT anomaly...")
     number = 0
     list_rules = []
     for i, row in df_bounds.iterrows():
