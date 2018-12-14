@@ -39,12 +39,14 @@ NOTE: categorical columns should be onehot encoded.
 The function then returns both the model trained and a dataframe with the rules infered. These rules look like the following example:
 
 ```
-Rule Nº 1: IF sex = 0 AND school = 0 AND studytime <= 4 AND G3 <= 18 AND studytime >= 3 AND G3 >= 0 
-Rule Nº 2: IF sex = 1 AND school = 0 AND studytime <= 4 AND G3 <= 20 AND studytime >= 1 AND G3 >= 0 
-Rule Nº 3: IF sex = 1 AND school = 1 AND studytime <= 1 AND G3 <= 13 AND studytime >= 1 AND G3 >= 13
+NOT anomaly...
+Rule Nº 1: IF sex = 0 AND school = 0 AND studytime <= 4 AND G3 <= 15 AND studytime >= 1 AND G3 >= 8 
+Rule Nº 2: IF sex = 0 AND school = 1 AND studytime <= 2 AND G3 <= 0 AND studytime >= 2 AND G3 >= 0 
+Rule Nº 3: IF sex = 1 AND school = 0 AND studytime <= 4 AND G3 <= 13 AND studytime >= 2 AND G3 >= 8 
 ```
 
-These rules indicates the limit values that justify why a data point should be considered an anomaly.
+These rules indicates the limit values that justify why a data point should not be considered an anomaly, so any other case would
+mean that the data is anomalous.
  
 
 ## More Information
