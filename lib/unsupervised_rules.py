@@ -77,6 +77,7 @@ def ocsvm_rule_extractor(dataset_mat, numerical_cols, categorical_cols, dct_para
     
     # Check data quantity
     n_vertex = 2**(len(numerical_cols) + len(categorical_cols))
+    n_vertex_numerical = 2**len(numerical_cols)
     
     # Check that there's enough data points to obtain the vertex of the hypercube
     if n_vertex > len(dataset_mat):
@@ -109,7 +110,7 @@ def ocsvm_rule_extractor(dataset_mat, numerical_cols, categorical_cols, dct_para
     # Case 1: Only numerical variables
     if len(categorical_cols) == 0:
         # Obtain vertices
-        vectors_bound_all = obtain_vertices(df_anomalies_no, X_train, sc, n_vertex, numerical_cols)
+        vectors_bound_all = obtain_vertices(df_anomalies_no, X_train, sc, n_vertex_numerical, numerical_cols)
         
         # Obtain limits
         df_bounds_max = vectors_bound_all.max().reset_index().rename(columns={'index':'cat'}).transpose() # df with the max variable values on the hyperplanes
@@ -146,7 +147,7 @@ def ocsvm_rule_extractor(dataset_mat, numerical_cols, categorical_cols, dct_para
             df_anomalies_no_sub = df_anomalies_no[(df_anomalies_no.index.isin(list_index))].copy() # sub-hypercube
               
             # Obtain vertices for this iteration
-            vectors_bound = obtain_vertices(df_anomalies_no_sub, X_train, sc, n_vertex, numerical_cols)
+            vectors_bound = obtain_vertices(df_anomalies_no_sub, X_train, sc, n_vertex_numerical, numerical_cols)
                 
             # Append results for this iteration
             if vectors_bound_all.empty:
