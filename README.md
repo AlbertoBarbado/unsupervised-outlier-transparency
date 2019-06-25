@@ -58,6 +58,14 @@ More information regarding the theory behind this method can be found in the fil
 
 * **Alberto Barbado González** - (https://github.com/AlbertoBarbado/)
 
+To cite it (BibTeX):
+
+@article{ abg2019,
+       author = "Barbado, Alberto",
+       title = "Rule extraction in unsupervised outlier detection for algorithmic transparency",
+       year = "2019",
+       address = "Spain"}
+
 
 ## License
 
