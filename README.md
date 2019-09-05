@@ -72,7 +72,7 @@ To cite it (BibTeX):
 This project is licensed under the Apache License 2.0 - see the [LICENSE.md](LICENSE.md) file for details
 
 ## Citation
-* Barbado González, Alberto. 2019. *Rule extraction in unsupervised outlier detection for algorithmic transparency*. Madrid. Telefónica.https://github.com/AlbertoBarbado/unsupervised-outlier-transparency 
+* Barbado González, Alberto. 2019. *Rule extraction in unsupervised outlier detection for algorithmic transparency*. Madrid. Telefónica. https://github.com/AlbertoBarbado/unsupervised-outlier-transparency [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.3387762.svg)](https://doi.org/10.5281/zenodo.3387762)
 
 ## References
 
