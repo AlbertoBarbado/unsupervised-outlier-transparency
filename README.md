@@ -71,6 +71,9 @@ To cite it (BibTeX):
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE.md](LICENSE.md) file for details
 
+## Citation
+* Barbado González, Alberto. 2019. *Rule extraction in unsupervised outlier detection for algorithmic transparency*. Madrid. Telefónica.https://github.com/AlbertoBarbado/unsupervised-outlier-transparency 
+
 ## References
 
 * [1]: H. Núñez, C. Angulo, and A. Català. Rule extraction from support vector machines. In European Symposium on Artificial Neural Networks (ESANN), pages 107–112, 2002.
