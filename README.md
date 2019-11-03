@@ -1,4 +1,4 @@
-# Rule extraction in unsupervised outlier detection for algorithmic transparency
+# Rule extraction in unsupervised outlier detection for XAI
 
 OneClass SVM is a popular method to perform unsupervised outlier detection on the features that compose a dataset. However, this method is generally considered a "black box"
 due to the fact that it's difficult to justify in an intuitive and simple way why the decision frontier is classifying the data points in the different categories. This problem 
