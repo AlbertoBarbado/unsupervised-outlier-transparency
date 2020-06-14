@@ -11,7 +11,6 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import ruleset
 import arff
-import time
 import pickle
 
 from joblib import Parallel, delayed
@@ -27,737 +26,16 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from imblearn.over_sampling import SMOTE
 from itertools import combinations, permutations, product
 from shapely.geometry import Polygon
-from sklearn.preprocessing import StandardScaler
 from aix360.algorithms.protodash import ProtodashExplainer
 from interpret.glassbox import DecisionListClassifier
-
-N_JOBS = 3
-
-def save_df_as_arff(df, folder='', file_name=''):
-    
-    arff.dump('{0}/{1}.arff'.format(folder, file_name)
-          , df.values
-          , relation='relation name'
-          , names=df.columns)
-
-
-def check_datapoint_inside(data_point, df_rules, numerical_cols,
-                           categorical_cols, check_opposite=True):
-    """
-    1 for the hypercubes where it's inside, 0 for when not. It checks differently
-    whether its for scenarios where the rules are independent according to the 
-    different combination of categorical variables or whether everything is analyzed 
-    alltogether. 
-        
-    Parameters
-    ----------
-    data_point : TYPE
-        DESCRIPTION.
-    df_rules : TYPE
-        DESCRIPTION.
-    numerical_cols : TYPE
-        DESCRIPTION.
-    categorical_cols : TYPE
-        DESCRIPTION.
-    check_opposite : TYPE
-        It indicates whether to consider datapoints with >=/<= or strict >/<. 
-        Since we will see the rules in a counterfactual way (p.e what should
-        happen for an outlier to be an inlier) we consider the datapoints of the
-        target rules with >=/<=, and the ones from the other class as >/< (that
-        means that we consider rules with P=1 even if they have points from the
-        other class on the edges) [NOT USED]
-    Returns
-    -------
-    df_plot : TYPE
-        DESCRIPTION.
-
-    """
-    df_plot = df_rules.copy()
-    
-    if len(df_rules)==0:
-        df_plot['check'] = 0
-        return df_plot
-    
-    # Default value
-    df_plot['check'] = 1
-    
-    # Check for categorical
-    if len(categorical_cols) > 0:
-        for col in categorical_cols:
-            value = data_point[col]
-            df_plot['check'] = df_plot['check']*(df_plot.apply(lambda x: 1 if (x[col] == value) else 0, axis=1))
-    # Check for numerical
-    if len(numerical_cols) > 0:
-        for col in numerical_cols:
-            value = data_point[col]
-            if check_opposite:
-                df_plot['check'] = df_plot['check']*(df_plot.apply(lambda x: 1 if ((x[col + '_max'] >= value) & (value >= x[col + '_min'])) else 0, axis=1))
-            else:
-                df_plot['check'] = df_plot['check']*(df_plot.apply(lambda x: 1 if ((x[col + '_max'] > value) & (value > x[col + '_min'])) else 0, axis=1))
-
-    return df_plot
-
-
-def check_datapoint_inside_only(data_point, df_rules, numerical_cols,
-                                categorical_cols, check_opposite=True):
-    """
-    1 for the hypercubes where it's inside, 0 for when not. It checks differently
-    whether its for scenarios where the rules are independent according to the 
-    different combination of categorical variables or whether everything is analyzed 
-    alltogether. 
-        
-    Parameters
-    ----------
-    data_point : TYPE
-        DESCRIPTION.
-    df_rules : TYPE
-        DESCRIPTION.
-    numerical_cols : TYPE
-        DESCRIPTION.
-    categorical_cols : TYPE
-        DESCRIPTION.
-    check_opposite : TYPE
-        It indicates whether to consider datapoints with >=/<= or strict >/<. 
-        Since we will see the rules in a counterfactual way (p.e what should
-        happen for an outlier to be an inlier) we consider the datapoints of the
-        target rules with >=/<=, and the ones from the other class as >/< (that
-        means that we consider rules with P=1 even if they have points from the
-        other class on the edges) [NOT USED]
-    Returns
-    -------
-    df_plot : TYPE
-        DESCRIPTION.
-
-    """
-    df_plot = df_rules.copy()
-    
-    if len(df_rules)==0:
-        df_plot['check'] = 0
-        return df_plot
-    
-    # Default value
-    df_plot['check'] = 1
-    
-    # Check for categorical
-    if len(categorical_cols) > 0:
-        for col in categorical_cols:
-            value = data_point[col]
-            df_plot['check'] = df_plot['check']*(df_plot.apply(lambda x: 1 if (x[col] == value) else 0, axis=1))
-    # Check for numerical
-    if len(numerical_cols) > 0:
-        for col in numerical_cols:
-            value = data_point[col]
-            if check_opposite:
-                df_plot['check'] = df_plot['check']*(df_plot.apply(lambda x: 1 if ((x[col + '_max'] >= value) & (value >= x[col + '_min'])) else 0, axis=1))
-            else:
-                df_plot['check'] = df_plot['check']*(df_plot.apply(lambda x: 1 if ((x[col + '_max'] > value) & (value > x[col + '_min'])) else 0, axis=1))
-
-    return df_plot[['check']]
-
-
-def dt_rules(clf, df_mat):
-    """
-    Function to transform the printed structure of a DT into the set of rules
-    derived from the paths to the terminal nodes.
-    It also includes the length of each of those rules,
-    as well as the prediction associated with it (value of that terminal node).
-
-    Parameters
-    ----------
-    clf : TYPE
-        DESCRIPTION.
-    df_mat : TYPE
-        DESCRIPTION.
-
-    Returns
-    -------
-    df_rules : TYPE
-        DESCRIPTION.
-
-    """
-    r = export_text(clf, feature_names=list(df_mat.columns))
-    
-    list_splits = r.split("|---")
-    list_splits = [x.replace("|", "") for x in list_splits]
-    list_splits = [x.replace("class: -1", "") for x in list_splits]
-    list_splits = [x.replace("class: 1", "") for x in list_splits]
-    list_splits = [x.strip() for x in list_splits]
-    df_splits = pd.DataFrame({"levels":list_splits})
-    df_splits = df_splits[df_splits['levels'] != ""].reset_index(drop=True).reset_index()
-    df_splits['index'] += 1
-    
-    
-    df_rules = pd.DataFrame()
-    
-    for i, point in df_mat.iterrows():
-        node_indices = clf.decision_path(point.values.reshape(1, -1))
-        rule = ""
-        node_indices = pd.DataFrame(node_indices.toarray().T).reset_index()
-        node_indices = node_indices.merge(df_splits)
-        node_indices = node_indices[node_indices[0] == 1]
-        for i in list(node_indices['levels']):
-            if rule == "":
-                rule = i
-            else:
-                rule = rule + " & " + i 
-        dct_aux = {'rule':rule,
-                   'prediction':clf.predict(point.values.reshape(1, -1)),
-                   'len_rule':len(node_indices)}
-        
-        df_rules = df_rules.append(pd.DataFrame(dct_aux, index=[0]))
-    
-    df_rules = df_rules.drop_duplicates()
-    
-    return df_rules
-
-
-def turn_rules_to_df(df_anomalies, list_rules, list_cols):
-    """
-    Function to transform the results from dt_rules() into a dataframe with the
-    max and min values for each feature.
-    
-    There are only two limis per feature (max and min). If there are not enough
-    information on the rule to obtain both values (p.e. rule = "x > 10") then 
-    a default value is applied over the missing limit (-np.inf for min and np.inf
-    for max; p.e. "x > 10" turns to "x_min = 10, x_max = np.inf").
-    If there are duplicated information, the limits keep the strictest value
-    (p.e. "x > 10 & x > 8 & x < 30" turns to "x_max = 30, x_min = 10").
-
-    Parameters
-    ----------
-    df_anomalies : TYPE
-        DESCRIPTION.
-    list_rules : TYPE
-        DESCRIPTION.
-    list_cols : TYPE
-        DESCRIPTION.
-
-    Returns
-    -------
-    df_rules : TYPE
-        DESCRIPTION.
-
-    """
-    
-    df_rules = pd.DataFrame()
-    
-    if len(list_rules)==0:
-        print("Warning: Rule list is empty: returning a DF without Rules")
-        return  pd.DataFrame({col+'_max':[] for col in list_cols}).append(pd.DataFrame({col+'_min':[] for col in list_cols}))
-    
-    # Iter for each rule
-    for rule in list_rules:
-        dct_aux = {}
-        
-        # Default values
-        for col in list_cols:
-            dct_aux[col + '_max'] = np.inf
-            dct_aux[col + '_min'] = -np.inf
-        
-        list_subrules = rule.split("&")
-        
-        # Iter for each component of the rule and obtain the limits
-        for subrule in list_subrules:
-            for col in list_cols:
-                
-                if col in subrule:
-                    if ">=" in subrule:
-                        aux = subrule.split(">=")
-                        if np.float(aux[1]) >= dct_aux[col + '_min']:
-                            dct_aux[col + '_min'] = np.float(aux[1])
- 
-                    elif ">" in subrule:
-                        aux = subrule.split(">")
-                        if np.float(aux[1]) >= dct_aux[col + '_min']:
-                            dct_aux[col + '_min'] = np.float(aux[1])
-
-                    if "<=" in subrule:
-                        aux = subrule.split("<=")
-                        if np.float(aux[1]) <= dct_aux[col + '_max']:
-                            dct_aux[col + '_max'] = np.float(aux[1])
- 
-                    elif "<" in subrule:
-                        aux = subrule.split("<") 
-                        if np.float(aux[1]) <= dct_aux[col + '_max']:
-                            dct_aux[col + '_max'] = np.float(aux[1])
- 
-        df_rules = df_rules.append(pd.DataFrame(dct_aux, index=[0]))
-    
-    return df_rules
-
-def file_naming_ocsvm(file_template, cluster_algorithm, method, use_inverse):
-    """
-    Parameters
-    ----------
-    file_template : TYPE
-        DESCRIPTION.
-    cluster_algorithm : TYPE
-        DESCRIPTION.
-    method : TYPE
-        DESCRIPTION.
-    use_inverse : TYPE
-        DESCRIPTION.
-
-    Returns
-    -------
-    file_name : TYPE
-        DESCRIPTION.
-
-    """
-    if use_inverse: file_name = file_template + "_culstering_{cluster_algorithm}_outliers_method_{method}".format(cluster_algorithm=cluster_algorithm,
-                                                                                                                  method=method)
-    else: file_name = file_template + "_culstering_{cluster_algorithm}_inliers_method_{method}".format(cluster_algorithm=cluster_algorithm,
-                                                                                                       method=method)
-    return file_name
-
-
-def plot_2D(df_rules, df_anomalies, folder = "", path_name=""):
-    """
-    Function to plot a 2D figure with the anomalies and the hypercubes. df_rules
-    should be in a format like the one returned in turn_rules_to_df() but without
-    np.inf values (they can be set instead to an arbitrary big/low enough value).
-
-    Parameters
-    ----------
-    df_rules : TYPE
-        DESCRIPTION.
-    df_anomalies : TYPE
-        DESCRIPTION.
-    folder : TYPE, optional
-        DESCRIPTION. The default is "".
-    path_name : TYPE, optional
-        DESCRIPTION. The default is "".
-
-    Returns
-    -------
-    None.
-
-    """
-    
-    ### Plot 2D
-    plt.figure(figsize=(12, 8))
-    
-    # Add hypercubes
-    for i in range(len(df_rules)):
-        # Create a Rectangle patch
-        x_1 = df_rules.iloc[i:i + 1]['gdenergy_min'].values[0]
-        x_2 = df_rules.iloc[i:i + 1]['gdenergy_max'].values[0]
-        y_1 = df_rules.iloc[i:i + 1]['gdpuls_min'].values[0]
-        y_2 = df_rules.iloc[i:i + 1]['gdpuls_max'].values[0]
-    
-        # Add the patch to the Axes
-        rect = patches.Rectangle(
-            (x_1, y_1),
-            x_2 - x_1,
-            y_2 - y_1,
-            linewidth=3,
-            edgecolor='black',
-            facecolor='none',
-            zorder=15)
-        currentAxis = plt.gca()
-        currentAxis.add_patch(rect)
-    
-    # Plot points
-    plt.plot(
-        df_anomalies[df_anomalies['predictions'] == 1]['gdenergy'],
-        df_anomalies[df_anomalies['predictions'] == 1]['gdpuls'],
-        'o',
-        color="blue",
-        label='not anomaly',
-        zorder=10)
-    plt.plot(
-        df_anomalies[df_anomalies['predictions'] == -1]['gdenergy'],
-        df_anomalies[df_anomalies['predictions'] == -1]['gdpuls'],
-        'o',
-        color='red',
-        label='anomaly',
-        zorder=10)
-    plt.legend(loc='upper left')
-    plt.xlabel('gdenergy', fontsize=12)
-    plt.ylabel('gdpuls', fontsize=12)
-    
-    x1, x2, y1, y2 = plt.axis()
-    plt.axis((x1, x2, y1, y2))
-    plt.title("Anomalies {0}".format(path_name))
-    plt.savefig(folder + "/" + "plot_2D_{0}".format(path_name) + ".png")
-    
-    
-def rule_overlapping_score(df_rules, df_anomalies, numerical_cols,
-                           categorical_cols):
-    """
-    Function to measure "Diversity"; the rules are different with "few
-    overlapping concepts". This is computed checking the area of the hypercubes 
-    of the rules that overlaps with another one.
-    
-    The way to check this is by seeing the 2D planes of each hypercube (by keeping
-    two degrees of freedom for the features in the hyperplane coordinates; n-2 features
-    are maintained and the other two are changed between their max/min values in order
-    to obtain the vertices of that 2D plane). Then, it is computed the area of the 
-    2D planes for the rules that overlaps, adding for all possible 2D planes the total
-    area overlapped for each rule.
-    
-    In order to compute a score, the features are normalized in order to have 
-    values between 0 and 1.
-    
-
-    Parameters
-    ----------
-    df_rules : TYPE
-        DESCRIPTION.
-    df_anomalies : TYPE
-        DESCRIPTION.
-    numerical_cols : TYPE
-        DESCRIPTION.
-    categorical_cols : TYPE
-        DESCRIPTION.
-
-    Returns
-    -------
-    TYPE
-        DESCRIPTION.
-
-    """
-
-    
-    def sort_vertices(list_vertex):
-        """
-        TODO
-        Sort values for the Shapely order needed 
-        """
-        list_x = list(set([v[0] for v in list_vertex]))
-        list_y = list(set([v[1] for v in list_vertex]))
-        
-        result = [(min(list_x), max(list_y)), (max(list_x), max(list_y)),
-                  (max(list_x), min(list_y)), (min(list_x), min(list_y))]
-        return result
-        
-    list_cols = numerical_cols 
-    # Obtain combinations of features to create the 2D planes
-    comb_free_features = [c for c in combinations(list_cols, 2)]
-    # Filter rules for each categorical combination state
-    if len(categorical_cols) > 0:
-        df_cat = df_rules[categorical_cols]
-        df_cat_unique = df_cat.drop_duplicates()
-    else:
-        df_cat = df_rules[categorical_cols]
-        df_cat_unique = df_cat.head(1) # Only one iter
-    
-    # Scale rules in order to treat all features equally
-    df_rules_original = df_rules.copy()
-    
-    # If there is one rule, then there is no overlapping
-    if len(df_rules_original) <= 1:
-        df_rules_original['score'] = 0
-        df_rules_original['n_intersects'] = 0
-        
-        return df_rules_original
-
-    if len(numerical_cols):
-        sc = MinMaxScaler()
-        sc.fit_transform(df_anomalies[numerical_cols])
-        cols_max = [x + '_max' for x in numerical_cols]
-        cols_min = [x + '_min' for x in numerical_cols]
-        df_rules[cols_max] = sc.transform(df_rules[cols_max])
-        df_rules[cols_min] = sc.transform(df_rules[cols_min])
-
-    # Obtain the vectors (dataframe) for each combination of 2 fr ee features and n-2 fixed ones (n size hyperspace)
-    df_return = pd.DataFrame()
-    k = 0
-    for i, row in df_cat_unique.iterrows():
-        print("Iter {0}/{1}".format(k, len(df_cat_unique)))
-        k += 1
-        # Obtain sub-hypercube (not outliers)
-        list_index = df_cat[df_cat[row.index] == row.values].dropna(
-        ).index  # index for that sub-hypercube
-        df_rules_sub = df_rules[(df_rules.index.isin(list_index))].copy()  # sub-hypercube
-        
-        # If no rules, skip
-        if len(df_rules_sub)==0:
-            continue
-        
-        # If len == 1, then no overlapping for this iter
-        elif len(df_rules_sub)==1:
-            df_final = pd.DataFrame({'rule_id':[df_rules_sub.index[0]],
-                                     'score':[1],
-                                     'n_intersects':[0],
-                                     'n':[1]})
-        
-        # Generic case
-        else:
-            df_final = pd.DataFrame()
-            k = 0
-            for comb in comb_free_features:
-
-                # Specify cols
-                list_free = [col + '_max' for col in comb] + [col + '_min' for col in comb] # Cols to change
-                cols_fixed = [col + '_max' for col in list_cols] + [col + '_min' for col in list_cols]
-                cols_fixed = [col for col in cols_fixed if col not in list_free] # Cols to mantain
-                # cols_fixed = cols_fixed + categorical_cols # categorical do not use _max or _min
-                
-                list_x1 = [comb[0] + '_max', comb[0] + '_min']
-                list_x2 = [comb[1] + '_max', comb[1] + '_min']
-                cols_free = list(product(list_x1, list_x2))
-                 # Vertices of the 2D planes
-                comb_vertices = [tuple(list(x) + [j for j in cols_fixed]) for x in cols_free]
-                
-                # Obtain polygons for those 2D planes
-                list_aux = [[tuple(vector[list(x)].values) for x in comb_vertices] for _,vector in df_rules_sub[list_free+cols_fixed].iterrows()]
-                list_aux = [sort_vertices(list_vertex) for list_vertex in list_aux]
-                polys = [Polygon(x) for x in list_aux]
-                   
-                # Compute intersections of parallel 2D planes
-                df_polys = pd.DataFrame({"rule_id":list(df_rules_sub.index),
-                                         "rule_vertices":[x.bounds for x in polys]})
-                list_permutations = [pair for pair in permutations(polys, 2)]
-                df_results = pd.DataFrame({"rule_id":[pair[0] for pair in permutations(list(df_rules_sub.index), 2)],
-                                           "score":[pair[0].intersection(pair[1]).area for pair in list_permutations]})
-    
-                # Annotate the rules with intersections in this 2D subspace
-                df_results['n_intersects'] = df_results.apply(lambda x: 0 if x['score']==0 else 1, axis=1)
-                
-                # Obtain % of area
-                ref_d = [pair[0].intersection(pair[0]).area for pair in list_permutations]
-                ref_q = [1 if x == 0 else x for x in ref_d] # set to 1 to divide if it's 0
-                # ref_q = [1 if max(x,y)==0 else max(x,y) for x,y in zip(ref_d, list(df_results['score'].values))]
-                df_results['score'] = abs(ref_d - df_results['score'])/ref_q # If score=0 and no rule overlapping means that the area for that rule is 0
-                # if max(df_results['score'])>1:break
-
-                # Keep iter results
-                if df_final.empty:
-                    n = 1
-                    df_results['n'] = n
-                    df_final = df_results
-                else:
-                    n += 1
-                    df_final['n'] = n
-                    # df_final = df_final.append(df_results).groupby(['rule_id']).agg({'score':"sum",
-                    #                                                                 "n_intersects":"sum",
-                    #                                                                 "n":"max"}).reset_index()
-                    # df_final = df_final.merge(df_results, left_on=['rule_id'], right_on=['rule_id'])
-                    df_final['score'] += df_results['score']
-                    df_final['n_intersects'] += df_results['n_intersects']
-                k += 1
-                if k == 50:break
-        
-        df_return = df_return.append(df_final)
-        
-    df_return['n'] = df_return.apply(lambda x: 1 if x['n']==0 else x['n'], axis=1)
-    df_return['score'] = df_return['score']/df_return['n']
-    df_return.drop(['n'], axis=1, inplace=True)
-    df_return = df_return.groupby(by=['rule_id']).agg({"score":"mean",
-                                                        "n_intersects":"sum"}).reset_index()
-        
-    df_rules_original = df_rules_original.reset_index().merge(df_return,
-                                                              right_on=['rule_id'],
-                                                              left_on=['index'])
-    df_rules_original = df_rules_original.drop(['index'], axis=1)
-    df_rules_original['score'] = df_rules_original['score'].round(2)
-    
-    return df_rules_original
-
-    
-def check_stability(df_anomalies, df_rules, model, numerical_cols,
-                    categorical_cols, using_inliers):
-    """
-    Function that computes the "stability" metrics of the hypercubes. 
-    First, it obtains the prototypes from the dataset and generates random samples
-    near them.
-    
-    Then, it obtains the prediction of the original model for those dummy samples
-    and checks if when the prediction is inlier/outlier, there is at least one rule
-    that includes that datapoint within it.
-    
-    It also checks the level of agreement between all the rules. Since the prototypes
-    belong to the same class, the function checks if the final prediction using all 
-    rules is the same for all the prototypes.
-    
-    Rules agreement:
-        - Choose N prototypes that represent the original hyperspace of data
-        - Generate M samples close to each of those N prototypes; the hypothesis
-        is that close points should be generally predicted belonging to the same class
-        - For each of those N*M datapoints (M datapoints per each N prototype) check
-        whether the rules (all of them) predict them as inliner or outlier; the datapoints
-        that come into the function are either outliers or inliers. If they are inliers, 
-        then the rules identify an artificial datapoint (of those M*N) as inlier if it
-        is outside every rule. If the datapoints are outliers it's the same reversed: a
-        datapoint is an inlier if no rule includes it.
-        - Then, it is checked the % of datapoints labeled as the assumed correct class (inliers or 
-        outliers), neighbours of that prototype compared to the total neighbours of that prototype.
-        - All the % for each prototype are averaged into one %.
-    
-    Model agreement:
-        - The % of predictions for the artificial datapoints aforementioned that are the same
-        between the rules and the original OCSVM model.
-
-    Parameters
-    ----------
-    df_anomalies : TYPE
-        DESCRIPTION.
-    df_rules : TYPE
-        DESCRIPTION.
-    model : TYPE
-        DESCRIPTION.
-    numerical_cols : TYPE
-        DESCRIPTION.
-    categorical_cols : TYPE
-        DESCRIPTION.
-    sc : TYPE
-        DESCRIPTION.
-    using_inliers : TYPE
-        DESCRIPTION.
-
-    Returns
-    -------
-    df_rules : TYPE
-        DESCRIPTION.
-
-    """
-    
-    # Ignore prints in this function
-    ff = open(os.devnull, 'w')
-    xx = sys.stdout # save sys.stdout
-    sys.stdout = ff
-    
-    if len(df_rules)==0:
-        df_rules['precision_vs_model'] = 0
-        df_rules['rules_agreement'] = 0
-        
-        return df_rules
-    
-    # Choose the type of datapoints and define params
-    label = 1 if using_inliers else -1
-    df_data = df_anomalies[df_anomalies['predictions']==label].copy()
-    n_samples = np.round(len(df_rules))
-    n_samples = n_samples if n_samples > 20 else 20 # at least 20 samples
-    df_rules_aux = df_rules.copy()
-    df_anomalies_aux = df_anomalies.copy()
-    
-    # Scaling
-    if len(numerical_cols):
-        sc = StandardScaler()
-        sc.fit_transform(df_anomalies[numerical_cols])
-        # df_data[numerical_cols] = sc.transform(df_data[numerical_cols])
-        df_anomalies_aux[numerical_cols] = sc.transform(df_anomalies_aux[numerical_cols])
-        cols_max = [x + '_max' for x in numerical_cols]
-        cols_min = [x + '_min' for x in numerical_cols]
-        # df_rules_aux[cols_max] = sc.transform(df_rules_aux[cols_max])
-        # df_rules_aux[cols_min] = sc.transform(df_rules_aux[cols_min])
-        # df_rules_aux = df_rules_aux.astype(float)
-    
-    # Generate Prototypes
-    explainer = ProtodashExplainer()
-    list_cols = numerical_cols + categorical_cols
-    (W, S, _) = explainer.explain(df_data[list_cols].values,
-                                  df_data[list_cols].values,
-                                  m=n_samples,
-                                  kernelType='Gaussian',
-                                  sigma=2)
-    df_prototypes = df_anomalies[df_anomalies.index.isin(list(S))][list_cols].reset_index(drop=True)
-    
-    # Generate artificial samples around the prototypes
-    df_samples_total = pd.DataFrame()
-    base_size = len(df_anomalies)
-    for i, row in df_prototypes.iterrows():
-        iter_size = np.round(base_size*W[i])
-        iter_size = iter_size if iter_size > 10 else 10
-        iter_size = int(np.round(iter_size))
-        df_samples = pd.DataFrame({col:np.random.uniform(low=row[col]*0.9, high=row[col]*1.1, size=(iter_size,)) for col in numerical_cols})
-        if len(categorical_cols)>0:
-            for col in categorical_cols:
-                df_samples[col] = row[col]
-        df_samples['prototype_id'] = i
-        df_samples_total = df_samples_total.append(df_samples)
-        
-    df_samples_unscaled = df_samples_total.copy()
-    df_samples_scaled = df_samples_total.copy()
-    df_samples_scaled[numerical_cols] = sc.transform(df_samples_scaled[numerical_cols])
-        
-    # Check two things:
-    # 1) Classifications are the same for all similar neighbours of a prototype
-    # 2) Rules give the same output as the original model (-1 if not included in any rule, 1 if included in at least one of them)
-    list_proto_id = list(df_samples_total['prototype_id'].unique())
-    precision_rules = 0
-    df_agree = pd.DataFrame()
-    j = 0 # Number of datapoints inside the rules
-    for proto_id in list_proto_id:
-        print(proto_id)
-        df_proto_subset_scaled = df_samples_scaled[df_samples_scaled['prototype_id']==proto_id][list_cols]
-        df_proto_subset_unscaled = df_samples_unscaled[df_samples_unscaled['prototype_id']==proto_id][list_cols]
-        
-        for row_scaled, row_unscaled in zip(df_proto_subset_scaled.iterrows(), df_proto_subset_unscaled.iterrows()):
-            i = row_scaled[0]
-            data_point_scaled = row_scaled[1]
-            data_point_unscaled = row_unscaled[1]
-            df_aux = pd.DataFrame(check_datapoint_inside(data_point_unscaled, df_rules, numerical_cols, categorical_cols)['check'])
-            
-            # Only if the prediction of this datapoint belongs to the same class...
-            rules_prediction = df_aux['check'].max()
-            df_agree = df_agree.append(pd.DataFrame({'proto_id':proto_id,
-                                                     'rules_prediction':rules_prediction}, index=[0]))
-
-            # Check if the predictions are the same as the model
-            y_model = model.predict(data_point_scaled.values.reshape(1, -1))[0]
-            if using_inliers:
-                # Model=inlier, Rules=inlier -> correct
-                if df_aux['check'].max() == 1 and y_model==1:
-                    j += 1
-                    precision_rules += 1 # If inside any rule, check as correct if the model also predicted it
-                # Model=outlier, Rules=Inlier -> incorrect
-                elif df_aux['check'].max() == 1:
-                    j += 1
-                # Model=outlier, Rules=outlier -> correct
-                elif df_aux['check'].max() == 0 and y_model==-1:
-                    j += 1
-                    precision_rules += 1 # If outside any rule, check as correct if the model also predicted it as outlier
-                # Model=inlier, Rules=outlier -> incorrect
-                elif df_aux['check'].max() == 0 and y_model==1:
-                    j += 1
-                    
-            else:
-                # Model=outlier, Rules=outlier -> correct
-                if df_aux['check'].max() == 1 and y_model==-1:
-                    j += 1
-                    precision_rules += 1 # If inside any rule, check as correct if the model also predicted it
-                # Model=inlier, Rules=outlier -> incorrect
-                elif df_aux['check'].max() == 1:
-                    j += 1
-                # Model=inlier, Rules=inlier -> correct
-                elif df_aux['check'].max() == 0 and y_model==1:
-                    j += 1
-                    precision_rules += 1 # If outside any rule, check as correct if the model also predicted it as inlier
-               # Model=outlier, Rules=Inlier -> incorrect
-                elif df_aux['check'].max() == 0 and y_model==-1:
-                    j += 1
-    
-    rules_0 = (df_agree[df_agree['rules_prediction']==0]
-               .groupby(by=['proto_id'])
-               .count()
-               .reset_index()
-               .rename(columns={'rules_prediction':'rules_0'}))
-    rules_1 = (df_agree[df_agree['rules_prediction']==1]
-               .groupby(by=['proto_id'])
-               .count()
-               .reset_index()
-               .rename(columns={'rules_prediction':'rules_1'}))
-    rules_agreement = rules_0.merge(rules_1, how="outer").fillna(0)
-    rules_agreement['per_agree'] = rules_agreement.apply(lambda x: max([x['rules_0'], x['rules_1']])/(x['rules_0']+x['rules_1']), axis=1)
-    j = j if j != 0 else 1
-    precision_vs_model = precision_rules/j # % of points with the same values as the model 
-    final_agreement = np.round(np.mean(rules_agreement['per_agree']), 4)
-    
-    df_rules['precision_vs_model'] = precision_vs_model # % of datapoints with the same prediction as the original model
-    df_rules['rules_agreement'] = final_agreement # % of agreement bewtween rules.
-    df_rules['precision_vs_model'] = df_rules['precision_vs_model'].round(2)
-    
-    # Revert print
-    sys.stdout = xx
-    
-    return df_rules
-
-
+from lib.config import N_JOBS
+from lib.common import (train_one_class_svm, grid_search, tree_to_code, save_df_as_arff, 
+                    check_datapoint_inside, check_datapoint_inside_only, turn_rules_to_df)
+from lib.xai_metrics import (rule_overlapping_score, check_stability)
     
 def surrogate_dt_rules(df_anomalies, model, numerical_cols,
-                       categorical_cols, path="",  file_name=""):
+                       categorical_cols, metrics=True, path="",
+                       file_name="default_name"):
     """
     TODO
 
@@ -771,10 +49,12 @@ def surrogate_dt_rules(df_anomalies, model, numerical_cols,
         DESCRIPTION.
     categorical_cols : TYPE
         DESCRIPTION.
+    metrics : TYPE, optional
+        DESCRIPTION. The default is True.
     path : TYPE, optional
         DESCRIPTION. The default is "".
     file_name : TYPE, optional
-        DESCRIPTION. The default is "".
+        DESCRIPTION. The default is "default_name".
 
     Returns
     -------
@@ -782,13 +62,69 @@ def surrogate_dt_rules(df_anomalies, model, numerical_cols,
         DESCRIPTION.
     df_rules_outliers : TYPE
         DESCRIPTION.
-    df_no_pruned : TYPE
+    df_rules_inliers_p1 : TYPE
         DESCRIPTION.
-    df_yes_pruned : TYPE
+    df_rules_outliers_p1 : TYPE
         DESCRIPTION.
 
     """
     
+    def dt_rules(clf, df_mat):
+        """
+        Function to transform the printed structure of a DT into the set of rules
+        derived from the paths to the terminal nodes.
+        It also includes the length of each of those rules,
+        as well as the prediction associated with it (value of that terminal node).
+    
+        Parameters
+        ----------
+        clf : TYPE
+            DESCRIPTION.
+        df_mat : TYPE
+            DESCRIPTION.
+    
+        Returns
+        -------
+        df_rules : TYPE
+            DESCRIPTION.
+    
+        """
+        r = export_text(clf, feature_names=list(df_mat.columns))
+        
+        list_splits = r.split("|---")
+        list_splits = [x.replace("|", "") for x in list_splits]
+        list_splits = [x.replace("class: -1", "") for x in list_splits]
+        list_splits = [x.replace("class: 1", "") for x in list_splits]
+        list_splits = [x.strip() for x in list_splits]
+        df_splits = pd.DataFrame({"levels":list_splits})
+        df_splits = df_splits[df_splits['levels'] != ""].reset_index(drop=True).reset_index()
+        df_splits['index'] += 1
+        
+        
+        df_rules = pd.DataFrame()
+        
+        for i, point in df_mat.iterrows():
+            node_indices = clf.decision_path(point.values.reshape(1, -1))
+            rule = ""
+            node_indices = pd.DataFrame(node_indices.toarray().T).reset_index()
+            node_indices = node_indices.merge(df_splits)
+            node_indices = node_indices[node_indices[0] == 1]
+            for i in list(node_indices['levels']):
+                if rule == "":
+                    rule = i
+                else:
+                    rule = rule + " & " + i 
+            dct_aux = {'rule':rule,
+                       'prediction':clf.predict(point.values.reshape(1, -1)),
+                       'len_rule':len(node_indices)}
+            
+            df_rules = df_rules.append(pd.DataFrame(dct_aux, index=[0]))
+        
+        df_rules = df_rules.drop_duplicates()
+        
+        return df_rules
+
+
     # Init
     y_real = df_anomalies['predictions']
     feature_cols = numerical_cols + categorical_cols
@@ -915,9 +251,11 @@ def surrogate_dt_rules(df_anomalies, model, numerical_cols,
     del df_rules_inliers['check'], df_rules_outliers['check']
        
     # Save to CSV
-    df_rules_outliers.to_csv("{path}/{file_name}_rules_outliers_DT.csv".format(path=path, file_name=file_name), index=False)
-    df_rules_inliers.to_csv("{path}/{file_name}_rules_inliers_DT.csv".format(path=path, file_name=file_name), index=False)
-      
+    if len(path)>0:
+        print("Saving results (all rules)...")
+        df_rules_outliers.to_csv("{path}/{file_name}_rules_outliers_DT.csv".format(path=path, file_name=file_name), index=False)
+        df_rules_inliers.to_csv("{path}/{file_name}_rules_inliers_DT.csv".format(path=path, file_name=file_name), index=False)
+          
     # Prune rules
     df_yes_pruned = df_rules_outliers[(df_rules_outliers['n_inliers_included'] == 0) &
                                       (df_rules_outliers['n_outliers_included'] > 0)]
@@ -934,7 +272,7 @@ def surrogate_dt_rules(df_anomalies, model, numerical_cols,
         df_no_pruned = simplify_rules_alt([], df_no_pruned).drop_duplicates()
         
     # Obtain additional metrics
-    if True:
+    if metrics:
         print("Obtaining additional metrics...")
         
         ### Overlapping
@@ -973,201 +311,24 @@ def surrogate_dt_rules(df_anomalies, model, numerical_cols,
         df_yes_pruned = df_yes_pruned.replace(min_dummy, -np.inf)
         df_no_pruned = df_no_pruned.replace(max_dummy, np.inf)
         df_no_pruned = df_no_pruned.replace(min_dummy, -np.inf)
-        
     
     # Save to CSV
-    df_yes_pruned.to_csv("{path}/{file_name}_rules_outliers_pruned_DT.csv".format(path=path, file_name=file_name),
-                                index=False)
-    df_no_pruned.to_csv("{path}/{file_name}_rules_inliers_pruned_DT.csv".format(path=path, file_name=file_name),
-                               index=False)
+    if len(path)>0:
+        print("Saving results (P@1 rules)...")
+        df_yes_pruned.to_csv("{path}/{file_name}_rules_outliers_pruned_DT.csv".format(path=path, file_name=file_name),
+                                    index=False)
+        df_no_pruned.to_csv("{path}/{file_name}_rules_inliers_pruned_DT.csv".format(path=path, file_name=file_name),
+                                   index=False)
     
+    df_rules_inliers_p1 = df_no_pruned
+    df_rules_outliers_p1 = df_yes_pruned
     
     return (df_rules_inliers, df_rules_outliers,
-            df_no_pruned, df_yes_pruned)
-    
-
-
-def ocsvm_rules_completion(df_anomalies, df_rules, numerical_cols, 
-                           categorical_cols, inliers_used=True,
-                           clustering_algorithm="kmeans", path="",  file_name=""):
-    """
-    Function to complete the information of the rules extracted; obtaining how many
-    datapoints are inside the hypercubes.
-    
-    Rules have fixed size; for kmeans clustering, the input cols could contain 
-    both categorical and numerical (regarding how the rules are checked).
-    When the algorithm is kprototypes, all the columns are included within "numerical"
-    since all the features will be treated the same way.
-
-    Parameters
-    ----------
-    df_anomalies : TYPE
-        DESCRIPTION.
-    df_rules : TYPE
-        DESCRIPTION.
-    numerical_cols : TYPE
-        DESCRIPTION.
-    categorical_cols : TYPE
-        DESCRIPTION.
-    inliers_used : TYPE, optional
-        DESCRIPTION. The default is True.
-    clustering_algorithm : TYPE, optional
-        DESCRIPTION. The default is "kmeans".
-    path : TYPE, optional
-        DESCRIPTION. The default is "".
-    file_name : TYPE, optional
-        DESCRIPTION. The default is "".
-
-    Returns
-    -------
-    df_rules : TYPE
-        DESCRIPTION.
-
-    """
-    
-    if clustering_algorithm == "kprototypes":
-        numerical_cols = numerical_cols + categorical_cols
-        categorical_cols = []
-    
-    df_rules['n_inliers_included'] = 0
-    df_rules['n_outliers_included'] = 0
-    n_inliers = len(df_anomalies[df_anomalies['predictions']==1])
-    n_outliers = len(df_anomalies[df_anomalies['predictions']==-1])
-    n_vertex = (len(categorical_cols) + 1)*2**(len(numerical_cols))
-    
-    print("Checking inliers inside rules...")
-    df_check = Parallel(n_jobs=N_JOBS)(delayed(check_datapoint_inside_only)(data_point,df_rules,numerical_cols,categorical_cols) for i, data_point in df_anomalies[df_anomalies['predictions']==1].iterrows())
-    df_check = pd.concat([x[x['check']>0] for x in df_check])
-    df_check = pd.DataFrame(df_check.groupby(df_check.index).sum()).reset_index()
-    df_temp =  df_rules[['n_inliers_included']].reset_index()
-    df_check = df_temp.merge(df_check, how="outer")[['check']].fillna(0)
-    df_rules['n_inliers_included'] = df_check
-
-    print("Checking outliers inside rules...")
-    df_check = Parallel(n_jobs=N_JOBS)(delayed(check_datapoint_inside_only)(data_point,df_rules,numerical_cols,categorical_cols) for i, data_point in df_anomalies[df_anomalies['predictions']==-1].iterrows())
-    df_check = pd.concat([x[x['check']>0] for x in df_check])
-    df_check = pd.DataFrame(df_check.groupby(df_check.index).sum()).reset_index()
-    df_temp =  df_rules[['n_inliers_included']].reset_index()
-    df_check = df_temp.merge(df_check, how="outer")[['check']].fillna(0)
-    df_rules['n_outliers_included'] = df_check
-    
-    # Check how many datapoints are included with the rules with Precision=1
-    print("Checking inliers/outliers inside hypercubes with Precision=1...")
-    n_inliers_p1 = 0
-    n_inliers_p0 = 0
-    n_outliers_p1 = 0
-    n_outliers_p0 = 0
-    n_inliers = len(df_anomalies[df_anomalies['predictions']==1])
-    n_outliers = len(df_anomalies[df_anomalies['predictions']==-1])
-
-    def wrapper_precision_check(data_point):
-        df_rules['check'] = check_datapoint_inside(data_point,
-                                                   df_rules,
-                                                   numerical_cols,
-                                                   categorical_cols)['check']
-        n_inliers_p1 = 0
-        n_inliers_p0 = 0
-        n_outliers_p1 = 0
-        n_outliers_p0 = 0
-    
-        if inliers_used:
-            # If inlier
-            if data_point['predictions']==1:
-                # Rules with any P and that include this datapoint
-                df_aux = df_rules[(df_rules['check']==1)] 
-                if len(df_aux) > 0:
-                    n_inliers_p0 += 1
-                
-                # Rules with P=1 and that include this datapoint
-                df_aux = df_rules[(df_rules['n_outliers_included']==0)
-                                  & (df_rules['check']==1)] 
-                if len(df_aux) > 0:
-                    n_inliers_p1 += 1
-        else:
-            # If outlier
-            if data_point['predictions']==-1:
-                # Rules with any P and that include this datapoint
-                df_aux = df_rules[(df_rules['check']==1)] 
-                if len(df_aux) > 0:
-                    n_outliers_p0 += 1
-                
-                # Rules with P=1 and that include this datapoint
-                df_aux = df_rules[(df_rules['n_inliers_included']==0)
-                                  & (df_rules['check']==1)] 
-                if len(df_aux) > 0:
-                    n_outliers_p1 += 1
-                    
-        return {'n_inliers_p0':n_inliers_p0,
-                'n_inliers_p1':n_inliers_p1,
-                'n_outliers_p0':n_outliers_p0,
-                'n_outliers_p1':n_outliers_p1}
-                    
-                    
-    dct_out = Parallel(n_jobs=N_JOBS)(delayed(wrapper_precision_check)(data_point) for i, data_point in df_anomalies.iterrows())
-    df_out = pd.DataFrame(dct_out).sum()
-    
-    for i, data_point in df_anomalies.iterrows():
-        df_rules['check'] = check_datapoint_inside(data_point,
-                                                   df_rules,
-                                                   numerical_cols,
-                                                   categorical_cols)['check']
-        if inliers_used:
-            # If inlier
-            if data_point['predictions']==1:
-                # Rules with any P and that include this datapoint
-                df_aux = df_rules[(df_rules['check']==1)] 
-                if len(df_aux) > 0:
-                    n_inliers_p0 += 1
-                
-                # Rules with P=1 and that include this datapoint
-                df_aux = df_rules[(df_rules['n_outliers_included']==0)
-                                  & (df_rules['check']==1)] 
-                if len(df_aux) > 0:
-                    n_inliers_p1 += 1
-        else:
-            # If outlier
-            if data_point['predictions']==-1:
-                # Rules with any P and that include this datapoint
-                df_aux = df_rules[(df_rules['check']==1)] 
-                if len(df_aux) > 0:
-                    n_outliers_p0 += 1
-                
-                # Rules with P=1 and that include this datapoint
-                df_aux = df_rules[(df_rules['n_inliers_included']==0)
-                                  & (df_rules['check']==1)] 
-                if len(df_aux) > 0:
-                    n_outliers_p1 += 1
-    
-    if inliers_used:
-        df_rules['n_inliers'] = n_inliers
-        df_rules['n_inliers_p0'] = df_out['n_inliers_p0']
-        df_rules['n_inliers_p1'] = df_out['n_inliers_p1']
-        try:
-            del df_rules['check']
-        except:
-            pass
-        path_aux = "inliers"
-    else:
-        df_rules['n_outliers_p1'] = df_out['n_outliers_p1']
-        df_rules['n_outliers_p0'] = df_out['n_outliers_p0']
-        df_rules['n_outliers'] = n_outliers
-        try:
-            del df_rules['check']
-        except:
-            pass
-        path_aux = "outliers"
-    
-    # Save to CSV
-    df_rules.to_csv("{path}/{file_name}_rules_{type_r}_pruned_ocsvm.csv".format(path=path,
-                                                                                file_name=file_name,
-                                                                                type_r = path_aux),
-                                index=False)
-
-    return df_rules
+            df_rules_inliers_p1, df_rules_outliers_p1)
     
     
 def anchors_rules(df_anomalies, numerical_cols, categorical_cols,
-                  model, scaler, path="",  file_name=""):
+                  model, scaler, metrics=True, path="",  file_name="default_name"):
     """
     TODO
 
@@ -1183,10 +344,12 @@ def anchors_rules(df_anomalies, numerical_cols, categorical_cols,
         DESCRIPTION.
     scaler : TYPE
         DESCRIPTION.
+    metrics : TYPE, optional
+        DESCRIPTION. The default is True.
     path : TYPE, optional
         DESCRIPTION. The default is "".
     file_name : TYPE, optional
-        DESCRIPTION. The default is "".
+        DESCRIPTION. The default is "default_name".
 
     Returns
     -------
@@ -1194,6 +357,8 @@ def anchors_rules(df_anomalies, numerical_cols, categorical_cols,
         DESCRIPTION.
 
     """
+
+
     
     def _transform_rules(list_rules, list_cols):
         """
@@ -1402,7 +567,9 @@ def anchors_rules(df_anomalies, numerical_cols, categorical_cols,
     list_rules_anchors_yes = [explainer.explain(j.values)['names'] 
                               for _,j in df_scaled_yes[feature_cols].iterrows()]
     
-    pickle.dump(list_rules_anchors_yes, open("{0}/list_rules_anchors_yes.p".format(path), "wb"))
+    if len(path)>0:
+        print("Backing up files...")
+        pickle.dump(list_rules_anchors_yes, open("{0}/list_rules_anchors_yes.p".format(path), "wb"))
     
     # Keep unique ones
     list_aux = []
@@ -1444,7 +611,9 @@ def anchors_rules(df_anomalies, numerical_cols, categorical_cols,
     list_rules_anchors_no = [explainer.explain(j.values)['names'] 
                               for _,j in df_scaled_no[feature_cols].iterrows()]
     
-    pickle.dump(list_rules_anchors_no, open("{0}/list_rules_anchors_no.p".format(path), "wb"))
+    if len("path")>0:
+        print("Backing up files...")
+        pickle.dump(list_rules_anchors_no, open("{0}/list_rules_anchors_no.p".format(path), "wb"))
     
     list_aux = []
     for col in list_rules_anchors_no:
@@ -1468,11 +637,6 @@ def anchors_rules(df_anomalies, numerical_cols, categorical_cols,
                 if "<" in value: size_rule += 1
         list_aux.append(size_rule)
     df_rules_anchors_no['size_rules'] = list_aux
-    
-    # list_rules_anchors_yes = [str(j) for j in list_rules_anchors_yes]
-    # list_rules_anchors_no = [str(j) for j in list_rules_anchors_no]
-    
-    #clf.predict(df_scaled.head(1)[feature_cols])
     
     print("Checking inliers inside rules for inliers/outliers...")
     df_rules_anchors_no['n_inliers_included'] = 0
@@ -1554,9 +718,11 @@ def anchors_rules(df_anomalies, numerical_cols, categorical_cols,
     del df_rules_anchors_yes['check'], df_rules_anchors_no['check']
     
     # Save to CSV
-    df_rules_anchors_yes.to_csv("{path}/{file_name}_rules_outliers_Anchors.csv".format(path=path, file_name=file_name), index=False)
-    df_rules_anchors_no.to_csv("{path}/{file_name}_rules_inliers_Anchors.csv".format(path=path, file_name=file_name), index=False)
-    
+    if len(path)>0:
+        print("Saving results (all rules)... ")
+        df_rules_anchors_yes.to_csv("{path}/{file_name}_rules_outliers_Anchors.csv".format(path=path, file_name=file_name), index=False)
+        df_rules_anchors_no.to_csv("{path}/{file_name}_rules_inliers_Anchors.csv".format(path=path, file_name=file_name), index=False)
+        
     # Prune rules
     df_yes_pruned = df_rules_anchors_yes[(df_rules_anchors_yes['n_inliers_included'] == 0) &
                                          (df_rules_anchors_yes['n_outliers_included'] > 0)]
@@ -1573,7 +739,7 @@ def anchors_rules(df_anomalies, numerical_cols, categorical_cols,
         df_no_pruned = simplify_rules_alt([], df_no_pruned).drop_duplicates()
         
     # Obtain additional metrics
-    if True:
+    if metrics:
         print("Obtaining additional metrics...")
         coeff = 1000
         
@@ -1614,20 +780,27 @@ def anchors_rules(df_anomalies, numerical_cols, categorical_cols,
         df_no_pruned = df_no_pruned.replace(min_dummy, -np.inf)
     
     # Save to CSV
-    df_yes_pruned.to_csv("{path}/{file_name}_rules_outliers_pruned_Anchors.csv".format(path=path, file_name=file_name),
-                                index=False)
-    df_no_pruned.to_csv("{path}/{file_name}_rules_inliers_pruned_Anchors.csv".format(path=path, file_name=file_name),
-                               index=False)
+    if len("path")>0:
+        print("Saving results (P@1 rules)...")
+        df_yes_pruned.to_csv("{path}/{file_name}_rules_outliers_pruned_Anchors.csv".format(path=path, file_name=file_name),
+                                    index=False)
+        df_no_pruned.to_csv("{path}/{file_name}_rules_inliers_pruned_Anchors.csv".format(path=path, file_name=file_name),
+                                   index=False)
     
     print("Process succsesfully finished!")
     
-    return (list_rules_transformed_no, df_rules_anchors_no,
-            df_rules_anchors_yes, list_rules_anchors_no,
-            df_yes_pruned, df_no_pruned)
+    df_rules_inliers = df_rules_anchors_no
+    df_rules_outliers = df_rules_anchors_yes
+    df_rules_inliers_p1 = df_no_pruned
+    df_rules_outliers_p1 = df_yes_pruned
+    
+    return (df_rules_inliers, df_rules_outliers,
+            df_rules_inliers_p1, df_rules_outliers_p1)
+    
 
 
-def rulefit_rules(df_anomalies, model, numerical_cols, categorical_cols,
-                  path="",  file_name=""):
+def rulefit_rules(df_anomalies, model, numerical_cols, categorical_cols, metrics=True,
+                  path="",  file_name="default_name"):
     """
     TODO
 
@@ -1635,27 +808,30 @@ def rulefit_rules(df_anomalies, model, numerical_cols, categorical_cols,
     ----------
     df_anomalies : TYPE
         DESCRIPTION.
-    model: TYPE
+    model : TYPE
         DESCRIPTION.
     numerical_cols : TYPE
         DESCRIPTION.
     categorical_cols : TYPE
         DESCRIPTION.
+    metrics : TYPE, optional
+        DESCRIPTION. The default is True.
     path : TYPE, optional
         DESCRIPTION. The default is "".
     file_name : TYPE, optional
-        DESCRIPTION. The default is "".
+        DESCRIPTION. The default is "default_name".
 
     Returns
     -------
     df_check : TYPE
         DESCRIPTION.
-    df_rules_outliers : TYPE
+    df_rules_inliers_p1 : TYPE
         DESCRIPTION.
-    df_rules_inliers : TYPE
+    df_rules_outliers_p1 : TYPE
         DESCRIPTION.
 
     """
+
     # Prepare Data
     feature_cols = numerical_cols + categorical_cols
     
@@ -1756,7 +932,9 @@ def rulefit_rules(df_anomalies, model, numerical_cols, categorical_cols,
     del df_check['check']
     
     # Save Results
-    df_check.to_csv("{path}/{file_name}_rules_RuleFit.csv".format(path=path, file_name=file_name), index=False)
+    if len(path)>0:
+        print("Saving results (RuleFit all rules)...")
+        df_check.to_csv("{path}/{file_name}_rules_RuleFit.csv".format(path=path, file_name=file_name), index=False)
     
     # Prune rules
     df_rules_inliers = df_check[(df_check['n_inliers_included'] > 0) &
@@ -1771,7 +949,7 @@ def rulefit_rules(df_anomalies, model, numerical_cols, categorical_cols,
         df_rules_outliers = simplify_rules_alt([], df_rules_outliers).drop_duplicates()
     
     # Obtain additional metrics
-    if True:
+    if metrics:
         print("Obtaining additional metrics...")
         coeff = 1000
         
@@ -1813,15 +991,20 @@ def rulefit_rules(df_anomalies, model, numerical_cols, categorical_cols,
         df_rules_outliers = df_rules_outliers.replace(min_dummy, -np.inf)
     
     # Save to CSV
-    df_rules_outliers.to_csv("{path}/{file_name}_rules_outliers_pruned_RuleFit.csv".format(path=path, file_name=file_name), index=False)
-    df_rules_inliers.to_csv("{path}/{file_name}_rules_inliers_pruned_RuleFit.csv".format(path=path, file_name=file_name), index=False)
+    if len(path)>0:
+        print("Saving results (P@1 rules)...")
+        df_rules_outliers.to_csv("{path}/{file_name}_rules_outliers_pruned_RuleFit.csv".format(path=path, file_name=file_name), index=False)
+        df_rules_inliers.to_csv("{path}/{file_name}_rules_inliers_pruned_RuleFit.csv".format(path=path, file_name=file_name), index=False)
     
     print("Process succsesfully finished!")
-    return df_check, df_rules_outliers, df_rules_inliers
+    df_rules_inliers_p1 = df_rules_inliers
+    df_rules_outliers_p1 = df_rules_outliers
+    
+    return df_check, df_rules_inliers_p1, df_rules_outliers_p1
  
     
 def skoperules_rules(df_anomalies, model, numerical_cols, categorical_cols,
-                     path="",  file_name=""):
+                     metrics=True, path="",  file_name="default_name"):
     """
     TODO
 
@@ -1829,33 +1012,32 @@ def skoperules_rules(df_anomalies, model, numerical_cols, categorical_cols,
     ----------
     df_anomalies : TYPE
         DESCRIPTION.
-    model: TYPE
+    model : TYPE
         DESCRIPTION.
     numerical_cols : TYPE
         DESCRIPTION.
     categorical_cols : TYPE
         DESCRIPTION.
+    metrics : TYPE, optional
+        DESCRIPTION. The default is True.
     path : TYPE, optional
         DESCRIPTION. The default is "".
     file_name : TYPE, optional
-        DESCRIPTION. The default is "".
+        DESCRIPTION. The default is "default_name".
 
     Returns
     -------
-    df_rules_info_inliers : TYPE
+    TYPE
         DESCRIPTION.
-    df_rules_info_outliers : TYPE
+    TYPE
         DESCRIPTION.
-    df_rules_inliers : TYPE
+    TYPE
         DESCRIPTION.
-    df_rules_outliers : TYPE
-        DESCRIPTION.
-    df_no_pruned : TYPE
-        DESCRIPTION.
-    df_yes_pruned : TYPE
+    TYPE
         DESCRIPTION.
 
     """
+
 
     ### Inliers
     # Prepare Data
@@ -1878,7 +1060,7 @@ def skoperules_rules(df_anomalies, model, numerical_cols, categorical_cols,
     
     if len(rules)==0:
         print("No rules found for this dataset")
-        return (None, None, None, None, None, None)
+        return (pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
     
     df_rules_info_inliers = pd.DataFrame({"rule":[v[0].replace(" and ", " & ") for v in rules],
                                           "precision":[v[1][0] for v in rules],
@@ -1926,7 +1108,7 @@ def skoperules_rules(df_anomalies, model, numerical_cols, categorical_cols,
     
     if len(rules)==0:
         print("No rules found for this dataset")
-        return (None, None, None, None, None, None)
+        return (pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
     
     # Obtain rules in df format
     print("Turning Rules to hypercubes...")
@@ -2024,8 +1206,10 @@ def skoperules_rules(df_anomalies, model, numerical_cols, categorical_cols,
     del df_rules_inliers['check'], df_rules_outliers['check']
     
     # Save to CSV
-    df_rules_outliers.to_csv("{path}/{file_name}_rules_outliers_SkopeRules.csv".format(path=path, file_name=file_name), index=False)
-    df_rules_inliers.to_csv("{path}/{file_name}_rules_inliers_SkopeRules.csv".format(path=path, file_name=file_name), index=False)
+    if len(path)>0:
+        print("Saving results (all rules)...")
+        df_rules_outliers.to_csv("{path}/{file_name}_rules_outliers_SkopeRules.csv".format(path=path, file_name=file_name), index=False)
+        df_rules_inliers.to_csv("{path}/{file_name}_rules_inliers_SkopeRules.csv".format(path=path, file_name=file_name), index=False)
       
     # Prune rules
     df_yes_pruned = df_rules_outliers[(df_rules_outliers['n_inliers_included'] == 0) &
@@ -2043,7 +1227,7 @@ def skoperules_rules(df_anomalies, model, numerical_cols, categorical_cols,
         df_no_pruned = simplify_rules_alt([], df_no_pruned).drop_duplicates()
         
     # Obtain additional metrics
-    if True:
+    if metrics:
         print("Obtaining additional metrics...")
         coeff = 1000
         ### Overlapping
@@ -2083,23 +1267,26 @@ def skoperules_rules(df_anomalies, model, numerical_cols, categorical_cols,
         df_yes_pruned = df_yes_pruned.replace(min_dummy, -np.inf)
         df_no_pruned = df_no_pruned.replace(max_dummy, np.inf)
         df_no_pruned = df_no_pruned.replace(min_dummy, -np.inf)
-        
     
     # Save to CSV
-    df_yes_pruned.to_csv("{path}/{file_name}_rules_outliers_pruned_SkopeRules.csv".format(path=path, file_name=file_name),
-                                index=False)
-    df_no_pruned.to_csv("{path}/{file_name}_rules_inliers_pruned_SkopeRules.csv".format(path=path, file_name=file_name),
-                               index=False)
+    if len(path)>0:
+        print("Savinr results (P@1 rules)...")
+        df_yes_pruned.to_csv("{path}/{file_name}_rules_outliers_pruned_SkopeRules.csv".format(path=path, file_name=file_name),
+                                    index=False)
+        df_no_pruned.to_csv("{path}/{file_name}_rules_inliers_pruned_SkopeRules.csv".format(path=path, file_name=file_name),
+                                   index=False)
     
+    df_rules_inliers_p1 = df_no_pruned
+    df_rules_outliers_p1 = df_yes_pruned
     
-    return (df_rules_info_inliers, df_rules_info_outliers,
-            df_rules_inliers, df_rules_outliers,
-            df_no_pruned, df_yes_pruned)
-        
+    return (df_rules_inliers, df_rules_outliers,
+            df_rules_inliers_p1, df_rules_outliers_p1)
+
         
         
 def frl_rules(df_anomalies, model, numerical_cols, categorical_cols,
-              path="",  file_name=""):
+              metrics=True, path="",  file_name="default_name"):
+    
     """
     Rules obtained using Bayesian Falling Rules List.
 
@@ -2107,16 +1294,18 @@ def frl_rules(df_anomalies, model, numerical_cols, categorical_cols,
     ----------
     df_anomalies : TYPE
         DESCRIPTION.
-    model: TYPE
+    model : TYPE
         DESCRIPTION.
     numerical_cols : TYPE
         DESCRIPTION.
     categorical_cols : TYPE
         DESCRIPTION.
+    metrics : TYPE, optional
+        DESCRIPTION. The default is True.
     path : TYPE, optional
         DESCRIPTION. The default is "".
     file_name : TYPE, optional
-        DESCRIPTION. The default is "".
+        DESCRIPTION. The default is "default_name".
 
     Returns
     -------
@@ -2124,6 +1313,7 @@ def frl_rules(df_anomalies, model, numerical_cols, categorical_cols,
         DESCRIPTION.
 
     """
+
     
     def turn_ruleset_to_df(df_anomalies, list_rules, list_cols):
         df_rules = pd.DataFrame()
@@ -2268,9 +1458,11 @@ def frl_rules(df_anomalies, model, numerical_cols, categorical_cols,
     del df_rules_inliers['check'], df_rules_outliers['check']
     
     # Save to CSV
-    df_rules_outliers.to_csv("{path}/{file_name}_rules_outliers_FRL.csv".format(path=path, file_name=file_name), index=False)
-    df_rules_inliers.to_csv("{path}/{file_name}_rules_inliers_FRL.csv".format(path=path, file_name=file_name), index=False)
-    
+    if len(path)>0:
+        print("Saving results (all rules)...")
+        df_rules_outliers.to_csv("{path}/{file_name}_rules_outliers_FRL.csv".format(path=path, file_name=file_name), index=False)
+        df_rules_inliers.to_csv("{path}/{file_name}_rules_inliers_FRL.csv".format(path=path, file_name=file_name), index=False)
+        
     # Prune rules
     df_yes_pruned = df_rules_outliers[(df_rules_outliers['n_inliers_included'] == 0) &
                                       (df_rules_outliers['n_outliers_included'] > 0)]
@@ -2287,7 +1479,7 @@ def frl_rules(df_anomalies, model, numerical_cols, categorical_cols,
         df_no_pruned = simplify_rules_alt([], df_no_pruned).drop_duplicates()
         
     # Obtain additional metrics
-    if True:
+    if metrics:
         print("Obtaining additional metrics...")
         coeff = 1000
         ### Overlapping
@@ -2330,19 +1522,24 @@ def frl_rules(df_anomalies, model, numerical_cols, categorical_cols,
         df_no_pruned = df_no_pruned.replace(min_dummy, -np.inf)
         
     # Save to CSV
-    df_yes_pruned.to_csv("{path}/{file_name}_rules_outliers_pruned_FRL.csv".format(path=path, file_name=file_name),
-                                index=False)
-    df_no_pruned.to_csv("{path}/{file_name}_rules_inliers_pruned_FRL.csv".format(path=path, file_name=file_name),
-                               index=False)
-
+    if len(path)>0:
+        print("Saving results (P@1 rules)...")
+        df_yes_pruned.to_csv("{path}/{file_name}_rules_outliers_pruned_FRL.csv".format(path=path, file_name=file_name),
+                                    index=False)
+        df_no_pruned.to_csv("{path}/{file_name}_rules_inliers_pruned_FRL.csv".format(path=path, file_name=file_name),
+                                   index=False)
+        
+    df_rules_inliers_p1 = df_no_pruned
+    df_rules_outliers_p1 = df_yes_pruned
+    
     return (df_rules_inliers, df_rules_outliers,
-            df_no_pruned, df_yes_pruned)
+            df_rules_inliers_p1, df_rules_outliers_p1)
 
 
 
 def aix360_rules_wrapper(df_anomalies, model, numerical_cols, categorical_cols,
-                         use_oversampling=False, rule_algorithm="", path="",
-                         file_name=""):
+                         use_oversampling=False, rule_algorithm="", 
+                         metrics=True, path="", file_name=""):
     """
     TODO
 
@@ -2350,7 +1547,7 @@ def aix360_rules_wrapper(df_anomalies, model, numerical_cols, categorical_cols,
     ----------
     df_anomalies : TYPE
         DESCRIPTION.
-    model: TYPE
+    model : TYPE
         DESCRIPTION.
     numerical_cols : TYPE
         DESCRIPTION.
@@ -2360,6 +1557,8 @@ def aix360_rules_wrapper(df_anomalies, model, numerical_cols, categorical_cols,
         DESCRIPTION. The default is False.
     rule_algorithm : TYPE, optional
         DESCRIPTION. The default is "".
+    metrics : TYPE, optional
+        DESCRIPTION. The default is True.
     path : TYPE, optional
         DESCRIPTION. The default is "".
     file_name : TYPE, optional
@@ -2372,20 +1571,17 @@ def aix360_rules_wrapper(df_anomalies, model, numerical_cols, categorical_cols,
 
     Returns
     -------
-    df_rules_info_inliers : TYPE
-        DESCRIPTION.
-    df_rules_info_outliers : TYPE
-        DESCRIPTION.
     df_rules_inliers : TYPE
         DESCRIPTION.
     df_rules_outliers : TYPE
         DESCRIPTION.
-    df_no_pruned : TYPE
+    df_rules_inliers_p1 : TYPE
         DESCRIPTION.
-    df_yes_pruned : TYPE
+    df_rules_outliers_p1 : TYPE
         DESCRIPTION.
 
     """
+
 
     
     # Define variables
@@ -2576,12 +1772,14 @@ def aix360_rules_wrapper(df_anomalies, model, numerical_cols, categorical_cols,
     del df_rules_inliers['check'], df_rules_outliers['check']
     
     # Save to CSV
-    df_rules_outliers.to_csv("{path}/{file_name}_rules_outliers_{rule_algorithm}.csv".format(path=path,
-                                                                                             file_name=file_name,
-                                                                                             rule_algorithm=rule_algorithm), index=False)
-    df_rules_inliers.to_csv("{path}/{file_name}_rules_inliers_{rule_algorithm}.csv".format(path=path,
-                                                                                           file_name=file_name,
-                                                                                           rule_algorithm=rule_algorithm), index=False)
+    if len(path)>0:
+        print("Saving results (all rules)...")
+        df_rules_outliers.to_csv("{path}/{file_name}_rules_outliers_{rule_algorithm}.csv".format(path=path,
+                                                                                                 file_name=file_name,
+                                                                                                 rule_algorithm=rule_algorithm), index=False)
+        df_rules_inliers.to_csv("{path}/{file_name}_rules_inliers_{rule_algorithm}.csv".format(path=path,
+                                                                                               file_name=file_name,
+                                                                                               rule_algorithm=rule_algorithm), index=False)
       
     # Prune rules
     df_yes_pruned = df_rules_outliers[(df_rules_outliers['n_inliers_included'] == 0) &
@@ -2599,7 +1797,7 @@ def aix360_rules_wrapper(df_anomalies, model, numerical_cols, categorical_cols,
         df_no_pruned = simplify_rules_alt([], df_no_pruned).drop_duplicates()
         
     # Obtain additional metrics
-    if True:
+    if metrics:
         print("Obtaining additional metrics...")
         coeff = 1000
         ### Overlapping
@@ -2640,25 +1838,33 @@ def aix360_rules_wrapper(df_anomalies, model, numerical_cols, categorical_cols,
         df_no_pruned = df_no_pruned.replace(min_dummy, -np.inf)
     
     # Save to CSV
-    df_yes_pruned.to_csv("{path}/{file_name}_rules_outliers_pruned_{rule_algorithm}.csv".format(path=path,
-                                                                                                file_name=file_name,
-                                                                                                rule_algorithm=rule_algorithm),
-                                index=False)
-    df_no_pruned.to_csv("{path}/{file_name}_rules_inliers_pruned_{rule_algorithm}.csv".format(path=path,
-                                                                                              file_name=file_name,
-                                                                                              rule_algorithm=rule_algorithm),
-                               index=False)
+    if len(path)>0:
+        print("Saving results (P@1 rules)...")
+        df_yes_pruned.to_csv("{path}/{file_name}_rules_outliers_pruned_{rule_algorithm}.csv".format(path=path,
+                                                                                                    file_name=file_name,
+                                                                                                    rule_algorithm=rule_algorithm),
+                                    index=False)
+        df_no_pruned.to_csv("{path}/{file_name}_rules_inliers_pruned_{rule_algorithm}.csv".format(path=path,
+                                                                                                  file_name=file_name,
+                                                                                                  rule_algorithm=rule_algorithm),
+                                   index=False)
     
+    
+    df_rules_inliers_p1 = df_no_pruned
+    df_rules_outliers_p1 = df_yes_pruned
     
     return (df_rules_inliers, df_rules_outliers,
-            df_no_pruned, df_yes_pruned)
+            df_rules_inliers_p1, df_rules_outliers_p1)
+
 
 
 def interpretML_DecisionListClassifier(df_anomalies, model, numerical_cols, categorical_cols,
                                        use_oversampling=False, rule_algorithm="", path="",
                                        file_name=""):
     """
-
+    
+    NOT IMPLEMENTED
+    
     Parameters
     ----------
     df_anomalies : TYPE

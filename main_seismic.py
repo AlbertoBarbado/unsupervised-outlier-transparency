@@ -7,26 +7,15 @@ Created on Sat Oct  5 20:05:29 2019
 # Libraries
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder
-from scipy.io import loadmat  # this is the SciPy module that loads mat-files
-import os
-import sys
-from lib.unsupervised_rules import ocsvm_rule_extractor
-from lib.tools import (dt_rules, turn_rules_to_df, plot_2D, anchors_rules,
-                       rulefit_rules, skoperules_rules, surrogate_dt_rules,
-                       ocsvm_rules_completion, file_naming_ocsvm,
-                       aix360_rules_wrapper, frl_rules)
-from lib.pipelines import ocsvm_rules_experiments_pipeline
-from lib.common import grid_search, train_one_class_svm
-from dateutil.parser import parse
-from scipy.io import arff
-from io import StringIO
+
+from sklearn.preprocessing import LabelEncoder
 from sklearn.utils import shuffle
 from sklearn.model_selection import train_test_split
-
-import warnings
-warnings.filterwarnings("ignore")
-
+from lib.ocsvm_general import ocsvm_rules
+from lib.unsupervised_rules import ocsvm_rule_extractor
+from lib.others_rule_extraction import (surrogate_dt_rules, anchors_rules, 
+                                    rulefit_rules, skoperules_rules, 
+                                    frl_rules, aix360_rules_wrapper)
 
 # =============================================================================
 # Load & Preprocess data
@@ -111,10 +100,10 @@ df_mat = df_data[numerical_cols + categorical_cols]
 # =============================================================================
 # Define hyperparams and path names
 # =============================================================================
-#### Define Hyperparams
-# Hyperparameters to use
-#dct_params = {'nu':0.1, 'kernel':"rbf", 'gamma':0.7}
+# Hyperparams
 dct_params = {'nu': 0.1, 'kernel': "rbf", 'gamma': 0.1}
+
+# Template params
 script_name = "seismic"
 path_folder = "results/seismic"
 file_template = "{script_name}_kernel_{kernel}".format(script_name=script_name,
@@ -127,50 +116,55 @@ file_template = "{script_name}_kernel_{kernel}".format(script_name=script_name,
 CLUSTER_ALGORITHM = "kmeans"
 METHOD = "discard"
 
-ocsvm_rules_experiments_pipeline(df_mat = df_mat,
-                                 numerical_cols = numerical_cols,
-                                 categorical_cols = categorical_cols,
-                                 cluster_algorithm = CLUSTER_ALGORITHM,
-                                 method = METHOD,
-                                 rules_used = "all",
-                                 dct_params = dct_params,
-                                 path_folder = path_folder,
-                                 file_template = file_template,
-                                 store_intermediate=True,
-                                 plot_fig = False)
+(df_rules_inliers, df_rules_outliers,
+ df_rules_inliers_p1, df_rules_outliers_p1) = ocsvm_rules(df_mat = df_mat,
+                                                          numerical_cols = numerical_cols,
+                                                          categorical_cols = categorical_cols,
+                                                          cluster_algorithm = CLUSTER_ALGORITHM,
+                                                          method = METHOD,
+                                                          rules_used = "all",
+                                                          metrics=True,
+                                                          dct_params = dct_params,
+                                                          path = "",
+                                                          file_template = "",
+                                                          store_intermediate=False,
+                                                          plot_fig = False)
 
 #### K Means + Keep (Reset)
 CLUSTER_ALGORITHM = "kmeans"
 METHOD = "keep_reset"
 
-ocsvm_rules_experiments_pipeline(df_mat = df_mat,
-                                 numerical_cols = numerical_cols,
-                                 categorical_cols = categorical_cols,
-                                 cluster_algorithm = CLUSTER_ALGORITHM,
-                                 method = METHOD,
-                                 rules_used = "all",
-                                 dct_params = dct_params,
-                                 path_folder = path_folder,
-                                 file_template = file_template,
-                                 store_intermediate=True,
-                                 plot_fig = False)
-
+(df_rules_inliers, df_rules_outliers,
+ df_rules_inliers_p1, df_rules_outliers_p1) = ocsvm_rules(df_mat = df_mat,
+                                                          numerical_cols = numerical_cols,
+                                                          categorical_cols = categorical_cols,
+                                                          cluster_algorithm = CLUSTER_ALGORITHM,
+                                                          method = METHOD,
+                                                          rules_used = "all",
+                                                          metrics=True,
+                                                          dct_params = dct_params,
+                                                          path = "",
+                                                          file_template = "",
+                                                          store_intermediate=False,
+                                                          plot_fig = True)
 #### K Means + Keep
 CLUSTER_ALGORITHM = "kmeans"
 METHOD = "keep"
 
-ocsvm_rules_experiments_pipeline(df_mat = df_mat,
-                                 numerical_cols = numerical_cols,
-                                 categorical_cols = categorical_cols,
-                                 cluster_algorithm = CLUSTER_ALGORITHM,
-                                 method = METHOD,
-                                 rules_used = "all",
-                                 dct_params = dct_params,
-                                 path_folder = path_folder,
-                                 file_template = file_template,
-                                 store_intermediate=True,
-                                 plot_fig = False)
-
+(df_rules_inliers, df_rules_outliers,
+ df_rules_inliers_p1, df_rules_outliers_p1) = ocsvm_rules(df_mat = df_mat,
+                                                          numerical_cols = numerical_cols,
+                                                          categorical_cols = categorical_cols,
+                                                          cluster_algorithm = CLUSTER_ALGORITHM,
+                                                          method = METHOD,
+                                                          rules_used = "all",
+                                                          metrics=True,
+                                                          dct_params = dct_params,
+                                                          path = "",
+                                                          file_template = "",
+                                                          store_intermediate=False,
+                                                          plot_fig = True)
+                                                          
 # =============================================================================
 # Obtain Rules (OCSVM) - K Prototypes
 # =============================================================================
@@ -178,49 +172,54 @@ ocsvm_rules_experiments_pipeline(df_mat = df_mat,
 CLUSTER_ALGORITHM = "kprototypes"
 METHOD = "discard"
 
-ocsvm_rules_experiments_pipeline(df_mat = df_mat,
-                                 numerical_cols = numerical_cols,
-                                 categorical_cols = categorical_cols,
-                                 cluster_algorithm = CLUSTER_ALGORITHM,
-                                 method = METHOD,
-                                 rules_used = "all",
-                                 dct_params = dct_params,
-                                 path_folder = path_folder,
-                                 file_template = file_template,
-                                 store_intermediate=True,
-                                 plot_fig = False)
+(df_rules_inliers, df_rules_outliers,
+ df_rules_inliers_p1, df_rules_outliers_p1) = ocsvm_rules(df_mat = df_mat,
+                                                          numerical_cols = numerical_cols,
+                                                          categorical_cols = categorical_cols,
+                                                          cluster_algorithm = CLUSTER_ALGORITHM,
+                                                          method = METHOD,
+                                                          rules_used = "all",
+                                                          metrics=True,
+                                                          dct_params = dct_params,
+                                                          path = "",
+                                                          file_template = "",
+                                                          store_intermediate=False,
+                                                          plot_fig = True)
 
 #### K Means + Keep (Reset)
 CLUSTER_ALGORITHM = "kprototypes"
 METHOD = "keep_reset"
 
-ocsvm_rules_experiments_pipeline(df_mat = df_mat,
-                                 numerical_cols = numerical_cols,
-                                 categorical_cols = categorical_cols,
-                                 cluster_algorithm = CLUSTER_ALGORITHM,
-                                 method = METHOD,
-                                 rules_used = "all",
-                                 dct_params = dct_params,
-                                 path_folder = path_folder,
-                                 file_template = file_template,
-                                 store_intermediate=True,
-                                 plot_fig = False)
-
+(df_rules_inliers, df_rules_outliers,
+ df_rules_inliers_p1, df_rules_outliers_p1) = ocsvm_rules(df_mat = df_mat,
+                                                          numerical_cols = numerical_cols,
+                                                          categorical_cols = categorical_cols,
+                                                          cluster_algorithm = CLUSTER_ALGORITHM,
+                                                          method = METHOD,
+                                                          rules_used = "all",
+                                                          metrics=True,
+                                                          dct_params = dct_params,
+                                                          path = "",
+                                                          file_template = "",
+                                                          store_intermediate=False,
+                                                          plot_fig = True)
 #### K Means + Keep
 CLUSTER_ALGORITHM = "kprototypes"
 METHOD = "keep"
 
-ocsvm_rules_experiments_pipeline(df_mat = df_mat,
-                                 numerical_cols = numerical_cols,
-                                 categorical_cols = categorical_cols,
-                                 cluster_algorithm = CLUSTER_ALGORITHM,
-                                 method = METHOD,
-                                 rules_used = "all",
-                                 dct_params = dct_params,
-                                 path_folder = path_folder,
-                                 file_template = file_template,
-                                 store_intermediate=True,
-                                 plot_fig = False)
+(df_rules_inliers, df_rules_outliers,
+ df_rules_inliers_p1, df_rules_outliers_p1) = ocsvm_rules(df_mat = df_mat,
+                                                          numerical_cols = numerical_cols,
+                                                          categorical_cols = categorical_cols,
+                                                          cluster_algorithm = CLUSTER_ALGORITHM,
+                                                          method = METHOD,
+                                                          rules_used = "all",
+                                                          metrics=True,
+                                                          dct_params = dct_params,
+                                                          path = "",
+                                                          file_template = "",
+                                                          store_intermediate=False,
+                                                          plot_fig = True)
 
 # =============================================================================
 # Obtain General Model for the rest of the experiments
@@ -240,54 +239,53 @@ clf, sc, _, df_anomalies = ocsvm_rule_extractor(dataset_mat=df_mat,
 # Surrogate Decision Tree
 # =============================================================================
 #### Obtain Rules
-CLUSTER_ALGORITHM = "kmeans"
-METHOD = "discard"
 (df_rules_inliers, df_rules_outliers,
- df_no_pruned, df_yes_pruned) = surrogate_dt_rules(df_anomalies,
-                                                   clf,
-                                                   numerical_cols,
-                                                   categorical_cols,
-                                                   path=path_folder,
-                                                   file_name=file_template)
+ df_rules_inliers_p1, df_rules_outliers_p1) = surrogate_dt_rules(df_anomalies,
+                                                                 clf,
+                                                                 numerical_cols,
+                                                                 categorical_cols,
+                                                                 metrics=True,
+                                                                 path="",
+                                                                 file_name="")
 
 # =============================================================================
 # Anchors (Rules)
 # =============================================================================
 #### Obtain Rules
-(list_rules_transformed_no, df_rules_anchors_no,
- df_rules_anchors_yes, list_rules_anchors_no,
- df_yes_pruned, df_no_pruned) = anchors_rules(df_anomalies,
-                                              numerical_cols,
-                                              categorical_cols,
-                                              model=clf,
-                                              scaler=sc,
-                                              path=path_folder,
-                                              file_name=file_template)
+(df_rules_inliers, df_rules_outliers,
+ df_rules_inliers_p1, df_rules_outliers_p1) = anchors_rules(df_anomalies,
+                                                            numerical_cols,
+                                                            categorical_cols,
+                                                            model=clf,
+                                                            scaler=sc,
+                                                            metrics=True,
+                                                            path="",
+                                                            file_name="")
 
 # =============================================================================
 # RuleFit
 # =============================================================================
 # Obtain rules
-df_check, df_rules_outliers, df_rules_inliers = rulefit_rules(df_anomalies,
-                                                              clf,
-                                                              numerical_cols,
-                                                              categorical_cols,
-                                                              path=path_folder,
-                                                              file_name=file_template)
+df_check, df_rules_inliers_p1, df_rules_outliers_p1 = rulefit_rules(df_anomalies,
+                                                                    clf,
+                                                                    numerical_cols,
+                                                                    categorical_cols,
+                                                                    metrics=True,
+                                                                    path="",
+                                                                    file_name="")
 
 # =============================================================================
 # SkopeRules               
 # =============================================================================
 ### Obtain Rules
-(df_rules_info_inliers, df_rules_info_outliers,
- df_rules_inliers, df_rules_outliers,
- df_no_pruned, df_yes_pruned) = skoperules_rules(df_anomalies,
+(df_rules_inliers, df_rules_outliers,
+ df_rules_inliers_p1, df_rules_outliers_p1) = skoperules_rules(df_anomalies,
                                                  clf,
                                                  numerical_cols,
                                                  categorical_cols,
-                                                 path=path_folder,
-                                                 file_name=file_template)
-
+                                                 metrics=True,
+                                                 path="",
+                                                 file_name="")
 
 # =============================================================================
 # Rules from AIX360
@@ -298,26 +296,25 @@ for rule_algorithm in ["brlg", "logrr", "glrm"]:
 
     ### Obtain Rules
     (df_rules_inliers, df_rules_outliers,
-    df_no_pruned, df_yes_pruned) = aix360_rules_wrapper(df_anomalies,
-                                                        clf,
-                                                        numerical_cols,
-                                                        categorical_cols,
-                                                        use_oversampling=True,
-                                                        rule_algorithm=rule_algorithm,
-                                                        path=path_folder,
-                                                        file_name=file_template)
-
+     df_rules_inliers_p1, df_rules_outliers_p1) = aix360_rules_wrapper(df_anomalies,
+                                                                       clf,
+                                                                       numerical_cols,
+                                                                       categorical_cols,
+                                                                       use_oversampling=True,
+                                                                       rule_algorithm=rule_algorithm,
+                                                                       path="",
+                                                                       file_name="")
 # =============================================================================
 # Falling Rule List (FRL)
 # =============================================================================
 ### Obtain Rules
 (df_rules_inliers, df_rules_outliers,
-df_no_pruned, df_yes_pruned) = frl_rules(df_anomalies,
-                                         clf,
-                                         numerical_cols,
-                                         categorical_cols,
-                                         path=path_folder,
-                                         file_name=file_template)
+ df_rules_inliers_p1, df_rules_outliers_p1) = frl_rules(df_anomalies,
+                                                        clf,
+                                                        numerical_cols,
+                                                        categorical_cols,
+                                                        path=path_folder,
+                                                        file_name=file_template)
                                          
                                                         
                                                         

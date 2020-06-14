@@ -7,25 +7,16 @@ Created on Sat Oct  5 20:05:29 2019
 # Libraries
 import numpy as np
 import pandas as pd
+
 from sklearn.preprocessing import LabelEncoder
-from scipy.io import loadmat  # this is the SciPy module that loads mat-files
-import os
-import sys
-from lib.unsupervised_rules import ocsvm_rule_extractor
-from lib.tools import (dt_rules, turn_rules_to_df, plot_2D, anchors_rules,
-                       rulefit_rules, skoperules_rules, surrogate_dt_rules,
-                       ocsvm_rules_completion, file_naming_ocsvm,
-                       aix360_rules_wrapper, frl_rules)
-from lib.pipelines import ocsvm_rules_experiments_pipeline
-from lib.common import grid_search, train_one_class_svm
-from dateutil.parser import parse
-from scipy.io import arff
-from io import StringIO
 from sklearn.utils import shuffle
 from sklearn.model_selection import train_test_split
-
-import warnings
-warnings.filterwarnings("ignore")
+from lib.ocsvm_general import ocsvm_rules
+from lib.unsupervised_rules import ocsvm_rule_extractor
+from lib.common import plot_2D
+from lib.others_rule_extraction import (surrogate_dt_rules, anchors_rules, 
+                                    rulefit_rules, skoperules_rules, 
+                                    frl_rules, aix360_rules_wrapper)
 
 # =============================================================================
 # Load & Preprocess data
@@ -67,8 +58,6 @@ seismoacoustic method based on registration coming form GMax only;
 # =============================================================================
 # Load dataset
 df_raw = pd.read_csv("dataset/seismic-bumps.csv")
-# meta, data = arff.loadarff('dataset/seismic-bumps_3.arff')
-# df = pd.DataFrame(data[0])
 
 # Encoding categorical columns
 obj_df = df_raw.select_dtypes(
@@ -105,14 +94,6 @@ print("% of seismic: ",
 # =============================================================================
 # Choose columns
 # =============================================================================
-print(df_data[['seismic', 'hazard']].corr(method='spearman'))
-# Influye sobretodo hora/weekday | day/month no dan tanta info
-
-corr_mat = df_data.corr(method='spearman')
-a = corr_mat['seismic'].head(10)
-
-#categorical_cols = [x for x in list(obj_df.columns) if x != 'seismic']
-#numerical_cols = [x for x in list(df_raw.columns) if x != 'seismic' and x not in categorical_cols]
 df_mat = df_data[[
     'seismoacoustic', 'shift', 'genergy', 'gplus', 'gdenergy', 'gdpuls',
     'hazard', 'bumps', 'bumps2'
@@ -121,12 +102,6 @@ df_mat = df_data[[
 categorical_cols = ['hazard', 'shift']
 numerical_cols = [x for x in list(df_mat.columns) if x not in categorical_cols]
 df_mat = df_data[numerical_cols + categorical_cols]
-
-# =============================================================================
-#  Grid Hyperparams
-# =============================================================================
-dct_joblib = {'n_jobs': 2, 'verbose': 0, 'backend': "loky"}
-#dct_params = grid_search(df_mat, numerical_cols, categorical_cols, dct_joblib)
 
 df_mat = df_mat[(df_mat['hazard'] == 0) & (df_mat['shift'] == 0)]  # 1 Cat
 df_mat = df_mat[['gdenergy', 'gdpuls']]  # 2D
@@ -137,10 +112,10 @@ df_mat = df_mat.reset_index(drop=True)
 # =============================================================================
 # Define hyperparams and path names
 # =============================================================================
-#### Define Hyperparams
-# Hyperparameters to use
-#dct_params = {'nu':0.1, 'kernel':"rbf", 'gamma':0.7}
+# Hyperparams
 dct_params = {'nu': 0.1, 'kernel': "rbf", 'gamma': 0.1}
+
+# Template params
 script_name = "seismic_2D"
 path_folder = "results/seismic_2D"
 file_template = "{script_name}_kernel_{kernel}".format(script_name=script_name,
@@ -153,49 +128,55 @@ file_template = "{script_name}_kernel_{kernel}".format(script_name=script_name,
 CLUSTER_ALGORITHM = "kmeans"
 METHOD = "discard"
 
-ocsvm_rules_experiments_pipeline(df_mat = df_mat,
-                                 numerical_cols = numerical_cols,
-                                 categorical_cols = categorical_cols,
-                                 cluster_algorithm = CLUSTER_ALGORITHM,
-                                 method = METHOD,
-                                 rules_used = "all",
-                                 dct_params = dct_params,
-                                 path_folder = path_folder,
-                                 file_template = file_template,
-                                 store_intermediate=True,
-                                 plot_fig = True)
+(df_rules_inliers, df_rules_outliers,
+ df_rules_inliers_p1, df_rules_outliers_p1) = ocsvm_rules(df_mat = df_mat,
+                                                          numerical_cols = numerical_cols,
+                                                          categorical_cols = categorical_cols,
+                                                          cluster_algorithm = CLUSTER_ALGORITHM,
+                                                          method = METHOD,
+                                                          rules_used = "all",
+                                                          metrics=True,
+                                                          dct_params = dct_params,
+                                                          path = "",
+                                                          file_template = "",
+                                                          store_intermediate=False,
+                                                          plot_fig = True)
 
 #### K Means + Keep (Reset)
 CLUSTER_ALGORITHM = "kmeans"
 METHOD = "keep_reset"
 
-ocsvm_rules_experiments_pipeline(df_mat = df_mat,
-                                 numerical_cols = numerical_cols,
-                                 categorical_cols = categorical_cols,
-                                 cluster_algorithm = CLUSTER_ALGORITHM,
-                                 method = METHOD,
-                                 rules_used = "all",
-                                 dct_params = dct_params,
-                                 path_folder = path_folder,
-                                 file_template = file_template,
-                                 store_intermediate=True,
-                                 plot_fig = True)
+(df_rules_inliers, df_rules_outliers,
+ df_rules_inliers_p1, df_rules_outliers_p1) = ocsvm_rules(df_mat = df_mat,
+                                                          numerical_cols = numerical_cols,
+                                                          categorical_cols = categorical_cols,
+                                                          cluster_algorithm = CLUSTER_ALGORITHM,
+                                                          method = METHOD,
+                                                          rules_used = "all",
+                                                          dct_params = dct_params,
+                                                          metrics=True,
+                                                          path = "",
+                                                          file_template = "",
+                                                          store_intermediate=False,
+                                                          plot_fig = True)
 
 #### K Means + Keep
 CLUSTER_ALGORITHM = "kmeans"
 METHOD = "keep"
 
-ocsvm_rules_experiments_pipeline(df_mat = df_mat,
-                                 numerical_cols = numerical_cols,
-                                 categorical_cols = categorical_cols,
-                                 cluster_algorithm = CLUSTER_ALGORITHM,
-                                 method = METHOD,
-                                 rules_used = "all",
-                                 dct_params = dct_params,
-                                 path_folder = path_folder,
-                                 file_template = file_template,
-                                 store_intermediate=True,
-                                 plot_fig = True)
+(df_rules_inliers, df_rules_outliers,
+ df_rules_inliers_p1, df_rules_outliers_p1) = ocsvm_rules(df_mat = df_mat,
+                                                          numerical_cols = numerical_cols,
+                                                          categorical_cols = categorical_cols,
+                                                          cluster_algorithm = CLUSTER_ALGORITHM,
+                                                          method = METHOD,
+                                                          rules_used = "all",
+                                                          dct_params = dct_params,
+                                                          metrics=True,
+                                                          path = "",
+                                                          file_template = "",
+                                                          store_intermediate=False,
+                                                          plot_fig = True)
 
 
 # =============================================================================
@@ -212,114 +193,98 @@ clf, sc, _, df_anomalies = ocsvm_rule_extractor(dataset_mat=df_mat,
                                                 use_inverse=False,
                                                 dct_params=dct_params)
 
-# # Save as arff
-# from lib.tools import save_df_as_arff
-# df_arff = df_anomalies[numerical_cols + ["predictions"]]
-# df_arff['predictions'] = df_arff['predictions'].astype(str)
-# save_df_as_arff(df_arff,
-#                 folder='grex_gui/Datasets/',
-#                 file_name='df_seismic_2D')
 
 # =============================================================================
 # Surrogate Decision Tree
 # =============================================================================
 #### Obtain Rules
-CLUSTER_ALGORITHM = "kmeans"
-METHOD = "discard"
 (df_rules_inliers, df_rules_outliers,
- df_no_pruned, df_yes_pruned) = surrogate_dt_rules(df_anomalies,
-                                                   clf,
-                                                   numerical_cols,
-                                                   categorical_cols,
-                                                   path=path_folder,
-                                                   file_name=file_template)
-                                                   
-# No changes with pruning vs no pruning; rules already optimized
-                                                   
+ df_rules_inliers_p1, df_rules_outliers_p1) = surrogate_dt_rules(df_anomalies,
+                                                                 clf,
+                                                                 numerical_cols,
+                                                                 categorical_cols,
+                                                                 metrics=True,
+                                                                 path="",
+                                                                 file_name="")
+        
 #### Plot Rules [Inliers]
-df_no_pruned = df_no_pruned.copy()
-df_no_pruned = df_no_pruned.drop_duplicates().reset_index(drop=True)
-df_no_pruned = df_no_pruned.replace(np.inf, 350)
-df_no_pruned = df_no_pruned.replace(-np.inf, -120)
-plot_2D(df_no_pruned,
+df_rules_inliers_p1 = df_rules_inliers_p1.drop_duplicates().reset_index(drop=True)
+df_rules_inliers_p1 = df_rules_inliers_p1.replace(np.inf, 350)
+df_rules_inliers_p1 = df_rules_inliers_p1.replace(-np.inf, -120)
+plot_2D(df_rules_inliers_p1,
         df_anomalies,
-        folder = path_folder,
+        folder = "",
         path_name=file_template + '_inliers_DT')
 
 #### Plot Rules [Outliers]
-df_yes_pruned = df_yes_pruned.copy()
-df_yes_pruned = df_yes_pruned.drop_duplicates().reset_index(drop=True)
-df_yes_pruned = df_yes_pruned.replace(np.inf, 350)
-df_yes_pruned = df_yes_pruned.replace(-np.inf, -120)
-plot_2D(df_yes_pruned,
+df_rules_outliers_p1 = df_rules_outliers_p1.drop_duplicates().reset_index(drop=True)
+df_rules_outliers_p1 = df_rules_outliers_p1.replace(np.inf, 350)
+df_rules_outliers_p1 = df_rules_outliers_p1.replace(-np.inf, -120)
+plot_2D(df_rules_outliers_p1,
         df_anomalies,
-        folder = path_folder,
+        folder = "",
         path_name=file_template + '_outliers_DT')
 
 # =============================================================================
 # Anchors (Rules)
 # =============================================================================
 #### Obtain Rules
-(list_rules_transformed_no, df_rules_anchors_no,
- df_rules_anchors_yes, list_rules_anchors_no,
- df_yes_pruned, df_no_pruned) = anchors_rules(df_anomalies,
-                                              numerical_cols,
-                                              categorical_cols,
-                                              model=clf,
-                                              scaler=sc,
-                                              path=path_folder,
-                                              file_name=file_template)
+(df_rules_inliers, df_rules_outliers,
+ df_rules_inliers_p1, df_rules_outliers_p1) = anchors_rules(df_anomalies,
+                                                            numerical_cols,
+                                                            categorical_cols,
+                                                            model=clf,
+                                                            scaler=sc,
+                                                            metrics=True,
+                                                            path="",
+                                                            file_name="")
 
 #### Plot Rules [Inliers]
-df_plot = df_no_pruned.copy()
-df_plot = df_plot.replace(np.inf, 350)
-df_plot = df_plot.replace(-np.inf, -120)
-df_plot = df_plot.drop_duplicates().reset_index(drop=True)
-plot_2D(df_plot,
+df_rules_inliers_p1 = df_rules_inliers_p1.drop_duplicates().reset_index(drop=True)
+df_rules_inliers_p1 = df_rules_inliers_p1.replace(np.inf, 350)
+df_rules_inliers_p1 = df_rules_inliers_p1.replace(-np.inf, -120)
+plot_2D(df_rules_inliers_p1,
         df_anomalies,
-        folder = path_folder,
+        folder = "",
         path_name=file_template + '_inliers_Anchors')
 
 #### Plot Rules [Outliers]
-df_plot = df_yes_pruned.copy()
-df_plot = df_plot.replace(np.inf, 350)
-df_plot = df_plot.replace(-np.inf, -120)
-df_plot = df_plot.drop_duplicates().reset_index(drop=True)
-plot_2D(df_plot,
+df_rules_outliers_p1 = df_rules_outliers_p1.drop_duplicates().reset_index(drop=True)
+df_rules_outliers_p1 = df_rules_outliers_p1.replace(np.inf, 350)
+df_rules_outliers_p1 = df_rules_outliers_p1.replace(-np.inf, -120)
+plot_2D(df_rules_outliers_p1,
         df_anomalies,
-        folder = path_folder,
+        folder = "",
         path_name=file_template + '_outliers_Anchors')
 
 # =============================================================================
 # RuleFit
 # =============================================================================
 # Obtain rules
-df_check, df_rules_outliers, df_rules_inliers = rulefit_rules(df_anomalies,
-                                                              clf,
-                                                              numerical_cols,
-                                                              categorical_cols,
-                                                              path=path_folder,
-                                                              file_name=file_template)
+df_check, df_rules_inliers_p1, df_rules_outliers_p1 = rulefit_rules(df_anomalies,
+                                                                    clf,
+                                                                    numerical_cols,
+                                                                    categorical_cols,
+                                                                    metrics=True,
+                                                                    path="",
+                                                                    file_name="")
 
 #### Plot Rules [Inliers]
-df_rules_inliers = df_rules_inliers.copy()
-df_rules_inliers = df_rules_inliers.drop_duplicates().reset_index(drop=True)
-df_rules_inliers = df_rules_inliers.replace(np.inf, 350)
-df_rules_inliers = df_rules_inliers.replace(-np.inf, -120)
-plot_2D(df_rules_inliers,
+df_rules_inliers_p1 = df_rules_inliers_p1.drop_duplicates().reset_index(drop=True)
+df_rules_inliers_p1 = df_rules_inliers_p1.replace(np.inf, 350)
+df_rules_inliers_p1 = df_rules_inliers_p1.replace(-np.inf, -120)
+plot_2D(df_rules_inliers_p1,
         df_anomalies,
-        folder = path_folder,
+        folder = "",
         path_name=file_template + '_inliers_RuleFit')
 
-
 #### Plot Rules [Outliers]
-df_rules_outliers = df_rules_outliers.copy()
-df_rules_outliers = df_rules_outliers.drop_duplicates().reset_index(drop=True)
-df_rules_outliers = df_rules_outliers.replace(np.inf, 350)
-df_rules_outliers = df_rules_outliers.replace(-np.inf, -120)
-plot_2D(df_rules_outliers,
+df_rules_outliers_p1 = df_rules_outliers_p1.drop_duplicates().reset_index(drop=True)
+df_rules_outliers_p1 = df_rules_outliers_p1.replace(np.inf, 350)
+df_rules_outliers_p1 = df_rules_outliers_p1.replace(-np.inf, -120)
+plot_2D(df_rules_outliers_p1,
         df_anomalies,
-        folder = path_folder,
+        folder = "",
         path_name=file_template + '_outliers_RuleFit')
 
 
@@ -327,33 +292,31 @@ plot_2D(df_rules_outliers,
 # SkopeRules               
 # =============================================================================
 ### Obtain Rules
-(df_rules_info_inliers, df_rules_info_outliers,
- df_rules_inliers, df_rules_outliers,
- df_no_pruned, df_yes_pruned) = skoperules_rules(df_anomalies,
+(df_rules_inliers, df_rules_outliers,
+ df_rules_inliers_p1, df_rules_outliers_p1) = skoperules_rules(df_anomalies,
                                                  clf,
                                                  numerical_cols,
                                                  categorical_cols,
-                                                 path=path_folder,
-                                                 file_name=file_template)
+                                                 metrics=True,
+                                                 path="",
+                                                 file_name="")
 
 #### Plot Rules [Inliers]
-df_plot = df_no_pruned.copy()
-df_plot = df_plot.drop_duplicates().reset_index(drop=True)
-df_plot = df_plot.replace(np.inf, 350)
-df_plot = df_plot.replace(-np.inf, -120)
-plot_2D(df_plot,
+df_rules_inliers_p1 = df_rules_inliers_p1.drop_duplicates().reset_index(drop=True)
+df_rules_inliers_p1 = df_rules_inliers_p1.replace(np.inf, 350)
+df_rules_inliers_p1 = df_rules_inliers_p1.replace(-np.inf, -120)
+plot_2D(df_rules_inliers_p1,
         df_anomalies,
-        folder = path_folder,
+        folder = "",
         path_name=file_template + '_inliers_SkopeRules')
 
 #### Plot Rules [Outliers]
-df_plot = df_yes_pruned.copy()
-df_plot = df_plot.drop_duplicates().reset_index(drop=True)
-df_plot = df_plot.replace(np.inf, 350)
-df_plot = df_plot.replace(-np.inf, -120)
-plot_2D(df_plot,
+df_rules_outliers_p1 = df_rules_outliers_p1.drop_duplicates().reset_index(drop=True)
+df_rules_outliers_p1 = df_rules_outliers_p1.replace(np.inf, 350)
+df_rules_outliers_p1 = df_rules_outliers_p1.replace(-np.inf, -120)
+plot_2D(df_rules_outliers_p1,
         df_anomalies,
-        folder = path_folder,
+        folder = "",
         path_name=file_template + '_outliers_SkopeRules')
 
 
@@ -361,26 +324,24 @@ plot_2D(df_plot,
 # Rules from AIX360
 # =============================================================================
 #### Choose algorithm
-rule_algorithm="logrr"
-
 for rule_algorithm in ["brlg", "logrr", "glrm"]:
     print("Rules for: {0}".format(rule_algorithm))
 
     ### Obtain Rules
     (df_rules_inliers, df_rules_outliers,
-    df_no_pruned, df_yes_pruned) = aix360_rules_wrapper(df_anomalies,
-                                                        clf,
-                                                        numerical_cols,
-                                                        categorical_cols,
-                                                        use_oversampling=True,
-                                                        rule_algorithm=rule_algorithm,
-                                                        path=path_folder,
-                                                        file_name=file_template)
+     df_rules_inliers_p1, df_rules_outliers_p1) = aix360_rules_wrapper(df_anomalies,
+                                                                       clf,
+                                                                       numerical_cols,
+                                                                       categorical_cols,
+                                                                       use_oversampling=True,
+                                                                       rule_algorithm=rule_algorithm,
+                                                                       path="",
+                                                                       file_name="")
     
     #### Plot Rules [Inliers]
-    if len(df_no_pruned) > 0:
+    if len(df_rules_inliers_p1) > 0:
         path_add = ""
-        df_plot = df_no_pruned.copy()
+        df_plot = df_rules_inliers_p1.copy()
     else:
         path_add = "with_errors"
         df_plot = df_rules_inliers.copy()
@@ -390,13 +351,13 @@ for rule_algorithm in ["brlg", "logrr", "glrm"]:
     df_plot = df_plot.replace(-np.inf, -120)
     plot_2D(df_plot,
             df_anomalies,
-            folder = path_folder,
+            folder = "",
             path_name=file_template + '_inliers_{0}_{1}'.format(rule_algorithm, path_add))
     
     #### Plot Rules [Outliers]
-    if len(df_yes_pruned) > 0:
+    if len(df_rules_outliers_p1) > 0:
         path_add = ""
-        df_plot = df_yes_pruned.copy()
+        df_plot = df_rules_outliers_p1.copy()
     else:
         path_add = "with_errors"
         df_plot = df_rules_outliers.copy()
@@ -406,7 +367,7 @@ for rule_algorithm in ["brlg", "logrr", "glrm"]:
     df_plot = df_plot.replace(-np.inf, -120)
     plot_2D(df_plot,
             df_anomalies,
-            folder = path_folder,
+            folder = "",
             path_name=file_template + '_outliers_{0}_{1}'.format(rule_algorithm, path_add))
 
 
@@ -415,17 +376,17 @@ for rule_algorithm in ["brlg", "logrr", "glrm"]:
 # =============================================================================
 ### Obtain Rules
 (df_rules_inliers, df_rules_outliers,
-df_no_pruned, df_yes_pruned) = frl_rules(df_anomalies,
-                                         clf,
-                                         numerical_cols,
-                                         categorical_cols,
-                                         path=path_folder,
-                                         file_name=file_template)
+ df_rules_inliers_p1, df_rules_outliers_p1) = frl_rules(df_anomalies,
+                                                        clf,
+                                                        numerical_cols,
+                                                        categorical_cols,
+                                                        path=path_folder,
+                                                        file_name=file_template)
                                          
 #### Plot Rules [Inliers]
-if len(df_no_pruned) > 0:
+if len(df_rules_inliers_p1) > 0:
     path_add = ""
-    df_plot = df_no_pruned.copy()
+    df_plot = df_rules_inliers_p1.copy()
 else:
     path_add = "with_errors"
     df_plot = df_rules_inliers.copy()
@@ -436,13 +397,13 @@ df_plot = df_plot.replace(np.inf, 350)
 df_plot = df_plot.replace(-np.inf, -120)
 plot_2D(df_plot,
         df_anomalies,
-        folder = path_folder,
-        path_name=file_template + '_inliers_FRL')
+        folder = "",
+        path_name=file_template + '_inliers_{0}_{1}'.format("FRL", path_add))
 
 #### Plot Rules [Outliers]
-if len(df_yes_pruned) > 0:
+if len(df_rules_outliers_p1) > 0:
     path_add = ""
-    df_plot = df_yes_pruned.copy()
+    df_plot = df_rules_outliers_p1.copy()
 else:
     path_add = "with_errors"
     df_plot = df_rules_outliers.copy()
@@ -453,5 +414,5 @@ df_plot = df_plot.replace(np.inf, 350)
 df_plot = df_plot.replace(-np.inf, -120)
 plot_2D(df_plot,
         df_anomalies,
-        folder = path_folder,
-        path_name=file_template + '_outliers_FRL')
+        folder = "",
+        path_name=file_template + '_outliers_{0}_{1}'.format("FRL", path_add))
