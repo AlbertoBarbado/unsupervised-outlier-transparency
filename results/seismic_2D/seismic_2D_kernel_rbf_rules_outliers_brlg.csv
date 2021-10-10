@@ -1,0 +1,4 @@
+gdenergy_max,gdenergy_min,gdpuls_max,gdpuls_min,size_rules,n_inliers_included,n_outliers_included,n_outliers_p1,n_outliers_p0,n_outliers
+inf,66.4,inf,50.4,2,14,21,8,29,67
+inf,66.4,-28.0,-inf,2,0,5,8,29,67
+-48.0,-inf,inf,19.0,2,0,3,8,29,67

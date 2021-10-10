@@ -1,0 +1,13 @@
+gdenergy_max,gdenergy_min,gdpuls_max,gdpuls_min,size_rules,n_inliers_included,n_outliers_included,n_outliers_p1,n_outliers_p0,n_outliers
+inf,102.5,inf,-inf,1,0,25,47,48,65
+inf,111.0,inf,-inf,1,0,24,47,48,65
+inf,103.0,inf,-inf,1,0,25,47,48,65
+inf,106.5,inf,-inf,1,0,24,47,48,65
+-84.5,-inf,-77.5,-inf,2,0,16,47,48,65
+-83.5,-inf,-81.0,-inf,2,0,15,47,48,65
+-85.5,-inf,-75.0,-inf,2,1,15,47,48,65
+-86.5,-inf,-75.0,-inf,2,0,14,47,48,65
+-85.5,-inf,-77.5,-inf,2,0,14,47,48,65
+106.5,-83.5,inf,96.0,3,1,6,47,48,65
+103.0,-86.5,inf,96.0,3,1,5,47,48,65
+103.0,-85.5,inf,100.0,3,0,4,47,48,65
