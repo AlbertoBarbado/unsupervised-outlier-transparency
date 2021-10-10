@@ -17,6 +17,8 @@ from joblib import Parallel, delayed
 
 import pickle
 
+MAX_ITERS = 100
+
 def obtain_centroid(X_train, clustering_algorithm, categorical_cols, sc, n_clusters):
     """
     Function to obtain the centroid of a group of data points. 
@@ -48,12 +50,23 @@ def obtain_centroid(X_train, clustering_algorithm, categorical_cols, sc, n_clust
         
         labels = kp.fit_predict(X_train.values, categorical=list_cat)
         centroid = kp.cluster_centroids_
-        centroid[0] = sc.inverse_transform(centroid[0])
-        list_aux = list(range(len(X_train.columns)))
-        aux = pd.DataFrame(centroid[1]).rename(columns={i:j for i,j in zip(list_aux[:len(list_cat)], list_cat)})
-        aux = pd.DataFrame(centroid[0]).join(aux)
-        centroid = aux.values
-    
+        
+        if False:
+            centroid[0] = sc.inverse_transform(centroid[0])
+            list_aux = list(range(len(X_train.columns)))
+            aux = pd.DataFrame(centroid[1]).rename(columns={i:j for i,j in zip(list_aux[:len(list_cat)], list_cat)})
+            aux = pd.DataFrame(centroid[0]).join(aux)
+            centroid = aux.values
+            centroid = pd.DataFrame(centroid)
+        else:
+            aux = centroid
+            # centroid = pd.concat([pd.DataFrame(x) for x in centroid]).T
+            centroid = pd.DataFrame(centroid)
+            centroid = centroid.drop(columns=list_cat, errors="ignore")
+            centroid = pd.DataFrame(sc.inverse_transform(centroid))
+            # aux = pd.concat([pd.DataFrame(x) for x in aux]).T
+            aux = pd.DataFrame(aux)
+            centroid[list_cat] = pd.DataFrame(aux)[list_cat]
         
     elif clustering_algorithm == "kmeans":
         if n_clusters >= len(X_train):
@@ -69,11 +82,12 @@ def obtain_centroid(X_train, clustering_algorithm, categorical_cols, sc, n_clust
         
         # Inverse transform cluster value
         centroid = sc.inverse_transform(centroid)
+        centroid = pd.DataFrame(centroid)
         
     else:
         raise ValueError("Cluster method {0} not recognised; Use 'kmeans' or 'kprototypes' instead".format(clustering_algorithm))
     
-    return pd.DataFrame({'labels': labels}), pd.DataFrame(centroid)
+    return pd.DataFrame({'labels': labels}), centroid
 
 
 def obtain_vertices(df_anomalies_no_sub, X_train, sc, n_vertex, numerical_cols,
@@ -229,7 +243,7 @@ def obtain_rules_discard(df_anomalies_no_sub, df_anomalies_yes_sub, X_train, sc,
         feature_cols = numerical_cols
 
     # Tolerance param
-    max_iters = 50
+    max_iters = MAX_ITERS
 
     # Obtain vertices
     n = 0
@@ -239,12 +253,22 @@ def obtain_rules_discard(df_anomalies_no_sub, df_anomalies_yes_sub, X_train, sc,
     df_anomalies_no_sub.drop_duplicates(inplace=True)
     df_anomalies_yes_sub.drop_duplicates(inplace=True)
     df_final = []
-
+    
+    # Ñapa: duplicate datapoints if below 2
+    if len(df_anomalies_no_sub)<2:
+        df_anomalies_no_sub = df_anomalies_no_sub.append(df_anomalies_no_sub)
+        df_anomalies_no_sub = df_anomalies_no_sub.reset_index(drop=True)
+    
+    if len(df_anomalies_yes_sub)<2:
+        df_anomalies_yes_sub = df_anomalies_yes_sub.append(df_anomalies_no_sub)
+        df_anomalies_yes_sub = df_anomalies_yes_sub.reset_index(drop=True)
+    
     # Data used -- start using all and 1 cluster
     dct_subdata = {"data": df_anomalies_no_sub, "n_clusters": 1}
     list_subdata = [dct_subdata]
 
     # Check until all non anomalous data is used for rule inferring
+    j = 0
     while check:
         # When there is no data to infer rules, finish
         if len(list_subdata) == 0:
@@ -252,7 +276,6 @@ def obtain_rules_discard(df_anomalies_no_sub, df_anomalies_yes_sub, X_train, sc,
         list_original = list_subdata.copy()
         list_subdata = []  # Reset list
         # For each subdata space, use two clusters to try and infer rules
-        j = 0
         for dct_subdata in list_original:
             # Load data
             df_anomaly_no = dct_subdata['data']
@@ -336,13 +359,22 @@ def obtain_rules_keep(df_anomalies_no_sub, df_anomalies_yes_sub, X_train, sc,
     n = 0
     check = True
     epsilon = 0.1
-    max_iter = 50
+    max_iter = MAX_ITERS
     #    e = int(np.round(epsilon*len(df_anomalies_no_sub)))
     hard_exit = False
 
     # Drop duplicates
     df_anomalies_no_sub.drop_duplicates(inplace=True)
     df_anomalies_yes_sub.drop_duplicates(inplace=True)
+    
+    # Ñapa: duplicate datapoints if below 2
+    if len(df_anomalies_no_sub)<2:
+        df_anomalies_no_sub = df_anomalies_no_sub.append(df_anomalies_no_sub)
+        df_anomalies_no_sub = df_anomalies_no_sub.reset_index(drop=True)
+    
+    if len(df_anomalies_yes_sub)<2:
+        df_anomalies_yes_sub = df_anomalies_yes_sub.append(df_anomalies_no_sub)
+        df_anomalies_yes_sub = df_anomalies_yes_sub.reset_index(drop=True)
 
     while check:
         # Rules
@@ -484,11 +516,21 @@ def obtain_rules_keep_reset(df_anomalies_no_sub, df_anomalies_yes_sub, X_train,
     # epsilon = 0.1
     #    e = int(np.round(epsilon*len(df_anomalies_no_sub)))
     # Tolerance param
-    max_iters = 50
+    max_iters = MAX_ITERS
 
     # Drop duplicates
     df_anomalies_no_sub.drop_duplicates(inplace=True)
     df_anomalies_yes_sub.drop_duplicates(inplace=True)
+    
+    # Ñapa: duplicate datapoints if below 2
+    if len(df_anomalies_no_sub)<2:
+        df_anomalies_no_sub = df_anomalies_no_sub.append(df_anomalies_no_sub)
+        df_anomalies_no_sub = df_anomalies_no_sub.reset_index(drop=True)
+    
+    if len(df_anomalies_yes_sub)<2:
+        df_anomalies_yes_sub = df_anomalies_yes_sub.append(df_anomalies_yes_sub)
+        df_anomalies_yes_sub = df_anomalies_yes_sub.reset_index(drop=True)
+    
     df_final = []
     df_datapoints_used = df_anomalies_no_sub.copy()
     j = 0
@@ -530,7 +572,7 @@ def obtain_rules_keep_reset(df_anomalies_no_sub, df_anomalies_yes_sub, X_train,
                 numerical_cols,
                 categorical_cols,
                 clustering_algorithm,
-                n_clusters=n)
+                n_clusters=n-3)
             
             df_datapoints_used = pd.DataFrame()
 
@@ -787,7 +829,7 @@ def ocsvm_rule_extractor(dataset_mat, numerical_cols, categorical_cols,
     pickle.dump(sc, open("{0}/sc.p".format(PATH_SAVE_MODEL), "wb"))
     
     # If there are no categorical cols, always use kmeans
-    if len(categorical_cols) == 0 and clustering_algorithm == "kprotoypes":
+    if len(categorical_cols) == 0 and clustering_algorithm == "kprototypes":
         print("No categorical cols, using K means instead")
         clustering_algorithm = "kmeans"
 
@@ -815,7 +857,11 @@ def ocsvm_rule_extractor(dataset_mat, numerical_cols, categorical_cols,
     preds = pd.DataFrame({"predictions": list(model.predict(X_train_model))})
     preds["distances"] = model.decision_function(X_train_model)
     df_anomalies = pd.merge(
-        dataset_mat, preds, left_index=True, right_index=True)
+        dataset_mat.reset_index(drop=True), 
+        preds.reset_index(drop=True), 
+        left_index=True,
+        right_index=True
+        )
 
     # If True, obtain rules for Anomalous datapoints
     if use_inverse:
