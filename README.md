@@ -61,14 +61,18 @@ More information regarding the theory behind this method can be found in the fil
 
 * Barbado González, Alberto. 2019. *Rule extraction in unsupervised outlier detection for algorithmic transparency*. Madrid. Telefónica. https://github.com/AlbertoBarbado/unsupervised-outlier-transparency [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.3387762.svg)](https://doi.org/10.5281/zenodo.3387762)
 
+* Barbado, A., Corcho, Ó., & Benjamins, R. (2022). Rule extraction in unsupervised anomaly detection for model explainability: Application to OneClass SVM. Expert Systems with Applications, 189, 116100.
 To cite it (BibTeX):
 
-@article{ abg2019,
-       author = "Barbado, Alberto",
-       title = "Rule extraction in unsupervised outlier detection for algorithmic transparency",
-       year = "2019",
-       address = "Spain",
-       doi= "10.5281/zenodo.3387762"}
+@article{barbado2022rule,
+  title={Rule extraction in unsupervised anomaly detection for model explainability: Application to OneClass SVM},
+  author={Barbado, Alberto and Corcho, {\'O}scar and Benjamins, Richard},
+  journal={Expert Systems with Applications},
+  volume={189},
+  pages={116100},
+  year={2022},
+  publisher={Elsevier}
+}
 
 ## License
 
