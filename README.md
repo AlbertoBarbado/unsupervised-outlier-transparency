@@ -51,7 +51,8 @@ mean that the data is anomalous.
 
 ## More Information
 
-More information regarding the theory behind this method can be found in the file unsupervised_outlier_algorithmic_transparency.pdf
+More information regarding the theory behind this method can be found within the corresponding paper. 
+The Jupyter Notebooks show several examples about how to use the library.
 
 
 ## Authors
