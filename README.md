@@ -53,7 +53,7 @@ mean that the data is anomalous.
 
 More information regarding the theory behind this method can be found within the corresponding paper. 
 The Jupyter Notebooks show several examples about how to use the library.
-
+The notebooks are designed so they can be tested with services such as Google Colab. 
 
 ## Authors
 
